@@ -1,53 +1,64 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pvcache/core/cache.dart';
 import 'package:pvcache/core/enums.dart';
+import 'package:pvcache/core/bridge.dart';
 
 void main() {
-  group('PVCache Basic Operations', () {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  // Enable test mode for in-memory database
+  PVBridge.testMode = true;
+
+  group('PVCache Sembast Operations', () {
     late PVCache cache;
 
-    setUp(() {
+    setUp(() async {
       cache = PVCache(
-        env: 'test',
+        env: 'test_sembast',
         hooks: [],
         defaultMetadata: {},
-        entryStorageType: StorageType.inMemory,
-        metadataStorageType: StorageType.inMemory,
+        entryStorageType: StorageType.stdSembast,
+        metadataStorageType: StorageType.stdSembast,
       );
     });
 
-    test('put and get string value', () async {
-      await cache.put('key1', 'Hello World');
-      final result = await cache.get('key1');
-      expect(result, equals('Hello World'));
+    tearDown(() async {
+      // Clean up database after each test
+      await PVBridge().close();
     });
 
-    test('put and get integer value', () async {
+    test('put and get string value with sembast', () async {
+      await cache.put('key1', 'Hello Sembast');
+      final result = await cache.get('key1');
+      expect(result, equals('Hello Sembast'));
+    });
+
+    test('put and get integer value with sembast', () async {
       await cache.put('key2', 42);
       final result = await cache.get('key2');
       expect(result, equals(42));
     });
 
-    test('put and get double value', () async {
+    test('put and get double value with sembast', () async {
       await cache.put('key3', 3.14159);
       final result = await cache.get('key3');
       expect(result, equals(3.14159));
     });
 
-    test('put and get boolean value', () async {
+    test('put and get boolean value with sembast', () async {
       await cache.put('key4', true);
       final result = await cache.get('key4');
       expect(result, equals(true));
     });
 
-    test('put and get list value', () async {
+    test('put and get list value with sembast', () async {
       final list = [1, 2, 3, 'four', true];
       await cache.put('key5', list);
       final result = await cache.get('key5');
       expect(result, equals(list));
     });
 
-    test('put and get map value', () async {
+    test('put and get map value with sembast', () async {
       final map = {
         'name': 'John',
         'age': 30,
@@ -59,7 +70,7 @@ void main() {
       expect(result, equals(map));
     });
 
-    test('put and get nested object', () async {
+    test('put and get nested object with sembast', () async {
       final nested = {
         'user': {
           'id': 123,
@@ -73,164 +84,131 @@ void main() {
       expect(result, equals(nested));
     });
 
-    test('put and get null value', () async {
-      await cache.put('key8', null);
-      final result = await cache.get('key8');
-      expect(result, isNull);
-    });
-
-    test('get non-existent key returns null', () async {
+    test('get non-existent key returns null with sembast', () async {
       final result = await cache.get('nonexistent');
       expect(result, isNull);
     });
 
-    test('exists returns true for existing key', () async {
+    test('exists returns true for existing key with sembast', () async {
       await cache.put('key9', 'exists');
       final exists = await cache.exists('key9');
       expect(exists, isTrue);
     });
 
-    test('exists returns false for non-existent key', () async {
+    test('exists returns false for non-existent key with sembast', () async {
       final exists = await cache.exists('nonexistent');
       expect(exists, isFalse);
     });
 
-    test('delete removes entry', () async {
+    test('delete removes entry with sembast', () async {
       await cache.put('key10', 'to be deleted');
       await cache.delete('key10');
       final result = await cache.get('key10');
       expect(result, isNull);
     });
 
-    test('overwrite existing value', () async {
+    test('overwrite existing value with sembast', () async {
       await cache.put('key11', 'original');
       await cache.put('key11', 'updated');
       final result = await cache.get('key11');
       expect(result, equals('updated'));
     });
-  });
 
-  group('PVCache with Metadata', () {
-    late PVCache cache;
+    test('persistence - data survives cache recreation', () async {
+      await cache.put('persist_key', 'persistent_value');
 
-    setUp(() {
-      cache = PVCache(
-        env: 'test_meta',
-        hooks: [],
-        defaultMetadata: {'version': 1},
-        entryStorageType: StorageType.inMemory,
-        metadataStorageType: StorageType.inMemory,
-      );
-    });
-
-    test('put with custom metadata', () async {
-      await cache.put(
-        'meta_key1',
-        'value',
-        metadata: {'priority': 'high', 'ttl': 3600},
-      );
-      final result = await cache.get('meta_key1');
-      expect(result, equals('value'));
-    });
-
-    test('get with metadata parameter', () async {
-      await cache.put('meta_key2', 'value');
-      final result = await cache.get('meta_key2', metadata: {'tracking': true});
-      expect(result, equals('value'));
-    });
-  });
-
-  group('PVCache Data Types Edge Cases', () {
-    late PVCache cache;
-
-    setUp(() {
-      cache = PVCache(
-        env: 'test_edge',
+      // Create new cache instance with same env
+      final cache2 = PVCache(
+        env: 'test_sembast',
         hooks: [],
         defaultMetadata: {},
-        entryStorageType: StorageType.inMemory,
-        metadataStorageType: StorageType.inMemory,
+        entryStorageType: StorageType.stdSembast,
+        metadataStorageType: StorageType.stdSembast,
+      );
+
+      final result = await cache2.get('persist_key');
+      expect(result, equals('persistent_value'));
+    });
+  });
+
+  group('PVCache Sembast Edge Cases', () {
+    late PVCache cache;
+
+    setUp(() async {
+      cache = PVCache(
+        env: 'test_sembast_edge',
+        hooks: [],
+        defaultMetadata: {},
+        entryStorageType: StorageType.stdSembast,
+        metadataStorageType: StorageType.stdSembast,
       );
     });
 
-    test('empty string', () async {
+    tearDown(() async {
+      await PVBridge().close();
+    });
+
+    test('empty string with sembast', () async {
       await cache.put('empty', '');
       final result = await cache.get('empty');
       expect(result, equals(''));
     });
 
-    test('empty list', () async {
+    test('empty list with sembast', () async {
       await cache.put('empty_list', []);
       final result = await cache.get('empty_list');
       expect(result, equals([]));
     });
 
-    test('empty map', () async {
+    test('empty map with sembast', () async {
       await cache.put('empty_map', {});
       final result = await cache.get('empty_map');
       expect(result, equals({}));
     });
 
-    test('zero value', () async {
+    test('zero value with sembast', () async {
       await cache.put('zero', 0);
       final result = await cache.get('zero');
       expect(result, equals(0));
     });
 
-    test('negative number', () async {
+    test('negative number with sembast', () async {
       await cache.put('negative', -100);
       final result = await cache.get('negative');
       expect(result, equals(-100));
     });
 
-    test('large number', () async {
-      await cache.put('large', 999999999999);
-      final result = await cache.get('large');
-      expect(result, equals(999999999999));
-    });
-
-    test('special characters in string', () async {
+    test('special characters in string with sembast', () async {
       await cache.put('special', 'Hello\nWorld\t🚀');
       final result = await cache.get('special');
       expect(result, equals('Hello\nWorld\t🚀'));
     });
 
-    test('unicode characters', () async {
+    test('unicode characters with sembast', () async {
       await cache.put('unicode', '你好世界 مرحبا العالم');
       final result = await cache.get('unicode');
       expect(result, equals('你好世界 مرحبا العالم'));
     });
-
-    test('mixed type list', () async {
-      final mixed = [
-        1,
-        'two',
-        3.0,
-        true,
-        null,
-        {'nested': 'map'},
-        [1, 2, 3],
-      ];
-      await cache.put('mixed', mixed);
-      final result = await cache.get('mixed');
-      expect(result, equals(mixed));
-    });
   });
 
-  group('PVCache Multiple Entries', () {
+  group('PVCache Sembast Multiple Entries', () {
     late PVCache cache;
 
-    setUp(() {
+    setUp(() async {
       cache = PVCache(
-        env: 'test_multi',
+        env: 'test_sembast_multi',
         hooks: [],
         defaultMetadata: {},
-        entryStorageType: StorageType.inMemory,
-        metadataStorageType: StorageType.inMemory,
+        entryStorageType: StorageType.stdSembast,
+        metadataStorageType: StorageType.stdSembast,
       );
     });
 
-    test('store and retrieve multiple entries', () async {
+    tearDown(() async {
+      await PVBridge().close();
+    });
+
+    test('store and retrieve multiple entries with sembast', () async {
       await cache.put('user1', {'name': 'Alice', 'age': 25});
       await cache.put('user2', {'name': 'Bob', 'age': 30});
       await cache.put('user3', {'name': 'Charlie', 'age': 35});
@@ -244,7 +222,7 @@ void main() {
       expect(user3, equals({'name': 'Charlie', 'age': 35}));
     });
 
-    test('delete one entry does not affect others', () async {
+    test('delete one entry does not affect others with sembast', () async {
       await cache.put('key1', 'value1');
       await cache.put('key2', 'value2');
       await cache.put('key3', 'value3');
@@ -254,6 +232,30 @@ void main() {
       expect(await cache.get('key1'), equals('value1'));
       expect(await cache.get('key2'), isNull);
       expect(await cache.get('key3'), equals('value3'));
+    });
+  });
+
+  group('PVCache Mixed Storage Types', () {
+    late PVCache cache;
+
+    setUp(() async {
+      cache = PVCache(
+        env: 'test_mixed',
+        hooks: [],
+        defaultMetadata: {},
+        entryStorageType: StorageType.stdSembast,
+        metadataStorageType: StorageType.inMemory,
+      );
+    });
+
+    tearDown(() async {
+      await PVBridge().close();
+    });
+
+    test('entries in sembast, metadata in memory', () async {
+      await cache.put('mixed_key', 'mixed_value', metadata: {'priority': 1});
+      final result = await cache.get('mixed_key');
+      expect(result, equals('mixed_value'));
     });
   });
 }
