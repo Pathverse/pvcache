@@ -1,6 +1,6 @@
 name: pvcache
 description: "Adding hooks to Sembast and Flutter secure storage for advanced caching strategies"
-version: 0.0.1
+version: 0.3.0
 homepage: https://github.com/Pathverse/pvcache
 
 environment:
