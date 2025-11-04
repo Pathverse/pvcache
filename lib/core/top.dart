@@ -14,22 +14,43 @@ class PVCacheTop {
   /// Current environment name. If null, uses most recent cache.
   static String? currentEnv;
 
-  /// Resolve current cache instance.
-  static PVCache _resolveEnv() {
-    if (currentEnv == null) {
-      // get the last instance
+  /// Resolve current cache instance and parse key.
+  ///
+  /// Returns tuple of (cache, parsedKey).
+  /// If key contains 'env:key' format, uses specified env and returns the key part.
+  /// If key is null, returns (cache, null) - useful for operations like clear.
+  /// Otherwise uses currentEnv or most recent cache.
+  static (PVCache, String?) _resolveEnv(String? key) {
+    String? targetEnv = currentEnv;
+    String? parsedKey = key;
+
+    // Check if key contains env:key format
+    if (key != null && key.contains(':')) {
+      final parts = key.split(':');
+      if (parts.length >= 2 && PVCache.instances.containsKey(parts[0])) {
+        targetEnv = parts[0];
+        parsedKey = parts
+            .sublist(1)
+            .join(':'); // Handle keys with multiple colons
+      }
+    }
+
+    // If no env specified, use most recent
+    if (targetEnv == null) {
       if (PVCache.instances.isEmpty) {
         throw Exception(
           'No PVCache instances available to resolve environment.',
         );
       }
-      currentEnv = PVCache.instances.keys.last;
+      targetEnv = PVCache.instances.keys.last;
     }
-    final cache = PVCache.instances[currentEnv!];
+
+    final cache = PVCache.instances[targetEnv];
     if (cache == null) {
-      throw Exception('No PVCache instance found for environment: $currentEnv');
+      throw Exception('No PVCache instance found for environment: $targetEnv');
     }
-    return cache;
+
+    return (cache, parsedKey);
   }
 
   /// Store key-value pair in cache.
@@ -38,8 +59,8 @@ class PVCacheTop {
     dynamic value, {
     Map<String, dynamic>? metadata,
   }) async {
-    final cache = _resolveEnv();
-    await cache.put(key, value, metadata: metadata);
+    final (cache, parsedKey) = _resolveEnv(key);
+    await cache.put(parsedKey!, value, metadata: metadata);
   }
 
   /// Retrieve value from cache. Returns null if not found.
@@ -47,8 +68,8 @@ class PVCacheTop {
     String key, {
     Map<String, dynamic>? metadata,
   }) async {
-    final cache = _resolveEnv();
-    return await cache.get(key, metadata: metadata);
+    final (cache, parsedKey) = _resolveEnv(key);
+    return await cache.get(parsedKey!, metadata: metadata);
   }
 
   /// Delete key-value pair from cache.
@@ -56,13 +77,13 @@ class PVCacheTop {
     String key, {
     Map<String, dynamic>? metadata,
   }) async {
-    final cache = _resolveEnv();
-    await cache.delete(key, metadata: metadata);
+    final (cache, parsedKey) = _resolveEnv(key);
+    await cache.delete(parsedKey!, metadata: metadata);
   }
 
   /// Clear all cache entries.
   static Future<void> clear({Map<String, dynamic>? metadata}) async {
-    final cache = _resolveEnv();
+    final (cache, _) = _resolveEnv(null);
     await cache.clear(metadata: metadata);
   }
 
@@ -71,7 +92,7 @@ class PVCacheTop {
     String key, {
     Map<String, dynamic>? metadata,
   }) async {
-    final cache = _resolveEnv();
-    return await cache.exists(key, metadata: metadata);
+    final (cache, parsedKey) = _resolveEnv(key);
+    return await cache.exists(parsedKey!, metadata: metadata);
   }
 }

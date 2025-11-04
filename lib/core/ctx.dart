@@ -127,6 +127,13 @@ class PVCtx {
         }
       }
 
+      // clear operation
+      if (actionType == ActionType.clear) {
+        await _runHooks(hooksByFlow[EventFlow.storageUpdate]);
+        await entry.clear();
+        await meta.clear();
+      }
+
       // metaUpdatePostEntry - update metadata after entry operation
       await _runHooks(hooksByFlow[EventFlow.metaUpdatePostEntry]);
       if (resolvedKey != null && runtimeMeta.isNotEmpty) {
@@ -288,6 +295,27 @@ class PVCtxStorageProxy {
 
       case StorageType.secureStorage:
         await PVBridge.secureStorage.delete(key: key);
+        break;
+    }
+  }
+
+  /// Clear all values from storage.
+  Future<void> clear() async {
+    switch (storageType) {
+      case StorageType.inMemory:
+      case StorageType.stdSembast:
+        final bridge = PVBridge();
+        final db = await bridge.getDatabaseForType(storageType);
+        final storeName = isMetadata
+            ? ctx.cache.metadataNameFunction!(ctx.cache.env)
+            : ctx.cache.env;
+        final store = bridge.getStore(storeName, storageType);
+        await store.delete(db);
+        break;
+
+      case StorageType.secureStorage:
+        // SecureStorage doesn't support clearing all keys
+        // Would need to maintain a key registry
         break;
     }
   }
