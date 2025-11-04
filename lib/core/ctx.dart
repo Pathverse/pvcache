@@ -2,47 +2,23 @@ part of 'cache.dart';
 
 /// Execution context for a cache operation, passed through all hooks.
 ///
-/// PVCtx contains all state for a single cache operation (put, get, delete, etc.):
-/// - Initial values (key, value, metadata)
-/// - Runtime state (resolved keys, metadata)
-/// - Storage proxies (entry and meta)
-/// - Return values
+/// Contains operation state: initial values, runtime state, storage proxies, and return values.
 ///
-/// Hooks receive a PVCtx instance and can:
-/// - Read/modify the key, value, or metadata
-/// - Access storage through [entry] and [meta] proxies
-/// - Store temporary data in [runtimeData]
-/// - Break execution with [BreakHook] exception
+/// Hooks can read/modify keys, values, metadata, and break execution with [BreakHook].
 ///
-/// The context flows through the EventFlow lifecycle:
-/// 1. **preProcess**: Initial values set, validation occurs
-/// 2. **metaRead**: Metadata loaded from storage into [runtimeMeta]
-/// 3. **metaUpdatePriorEntry**: Hooks can modify [runtimeMeta]
-/// 4. **storageRead/storageUpdate**: Entry read/written
-/// 5. **metaUpdatePostEntry**: Final metadata updates
-/// 6. **postProcess**: [returnValue] finalized
+/// EventFlow lifecycle:
+/// 1. **preProcess**: Validation
+/// 2. **metaRead**: Metadata loaded
+/// 3. **metaUpdatePriorEntry**: Pre-entry updates
+/// 4. **storageRead/storageUpdate**: Entry I/O
+/// 5. **metaUpdatePostEntry**: Post-entry updates
+/// 6. **postProcess**: Finalization
 ///
-/// Example hook using context:
+/// Example:
 /// ```dart
 /// Future<void> myHook(PVCtx ctx) async {
-///   // Access operation details
-///   print('Action: ${ctx.actionType}, Key: ${ctx.resolvedKey}');
-///
-///   // Modify value
-///   if (ctx.actionType == ActionType.put) {
-///     ctx.entryValue = transform(ctx.entryValue);
-///   }
-///
-///   // Update metadata
 ///   ctx.runtimeMeta['timestamp'] = DateTime.now().toIso8601String();
-///
-///   // Store temporary data
-///   ctx.runtimeData['processed'] = true;
-///
-///   // Early return if needed
-///   if (shouldBreak) {
-///     throw BreakHook(returnType: BreakReturnType.resolved);
-///   }
+///   if (shouldBreak) throw BreakHook(returnType: BreakReturnType.resolved);
 /// }
 /// ```
 class PVCtx {
@@ -52,68 +28,31 @@ class PVCtx {
   /// The type of operation being performed (put, get, delete, clear, exists).
   final ActionType actionType;
 
-  /// Initial key provided to the cache operation.
-  ///
-  /// May be `null` for operations like [ActionType.clear].
+  /// Initial key provided to the operation (null for clear).
   final String? initialKey;
 
-  /// Initial value provided for put operations.
-  ///
-  /// Only set for [ActionType.put], `null` for other operations.
+  /// Initial value for put operations (null for others).
   final dynamic initialEntryValue;
 
-  /// Initial metadata provided to the operation, merged with [PVCache.defaultMetadata].
+  /// Initial metadata merged with [PVCache.defaultMetadata].
   final Map<String, dynamic> initialMeta;
 
-  /// Resolved key for the entry, hooks can modify this.
-  ///
-  /// Starts as [initialKey] but hooks can transform it (e.g., add prefixes).
+  /// Resolved key for the entry (modifiable by hooks).
   late String? resolvedKey;
 
-  /// Resolved key for metadata storage, hooks can modify this.
-  ///
-  /// Defaults to `initialMeta['key']` or empty string.
+  /// Resolved metadata key (modifiable by hooks).
   late String? resolvedMetaKey;
 
-  /// Current value being operated on, hooks can modify this.
-  ///
-  /// - **put**: Starts as [initialEntryValue], hooks can transform before storage
-  /// - **get**: Loaded from storage, hooks can transform after retrieval
-  /// - **delete/clear/exists**: Not typically used
+  /// Current value being operated on (modifiable by hooks).
   late dynamic entryValue;
 
-  /// Runtime metadata for the current entry.
-  ///
-  /// Loaded from storage during [EventFlow.metaRead] and updated by hooks.
-  /// Automatically saved during [EventFlow.metaUpdatePostEntry].
-  ///
-  /// Hooks use this to store:
-  /// - TTL information (`ttl_seconds`, `_ttl_expiry`)
-  /// - Encryption nonces (`_encryption_nonces`)
-  /// - Access tracking (`last_accessed`, `hit_count`)
-  /// - Custom data
+  /// Runtime metadata loaded from storage and modified by hooks.
   Map<String, dynamic> runtimeMeta = {};
 
   /// Value returned from the operation.
-  ///
-  /// Set automatically for get/exists operations, or by [BreakHook].
   late dynamic returnValue;
 
-  /// Temporary storage for inter-hook communication.
-  ///
-  /// Hooks can store data here to share with other hooks in the same operation.
-  /// Not persisted to storage.
-  ///
-  /// Example:
-  /// ```dart
-  /// // Hook 1 stores data
-  /// ctx.runtimeData['validated'] = true;
-  ///
-  /// // Hook 2 reads it
-  /// if (ctx.runtimeData['validated'] == true) {
-  ///   // proceed
-  /// }
-  /// ```
+  /// Temporary inter-hook communication storage (not persisted).
   final Map<String, dynamic> runtimeData = {};
 
   /// Create a new context for a cache operation.
@@ -132,27 +71,10 @@ class PVCtx {
     runtimeMeta = {};
   }
 
-  /// Execute all hooks for this operation through the EventFlow lifecycle.
+  /// Execute all hooks through the EventFlow lifecycle.
   ///
-  /// This is the core hook execution engine. It:
-  /// 1. Groups hooks by [EventFlow] stage
-  /// 2. Executes stages in order
-  /// 3. Automatically handles storage reads/writes between stages
-  /// 4. Catches [BreakHook] exceptions to exit early
-  ///
-  /// Flow:
-  /// 1. **preProcess**: Run hooks
-  /// 2. **metaRead**: Load metadata → run hooks
-  /// 3. **metaUpdatePriorEntry**: Run hooks
-  /// 4. **storageRead**: Run hooks → load entry (get/exists)
-  /// 5. **storageUpdate**: Run hooks → save entry (put) or delete entry (delete)
-  /// 6. **metaUpdatePostEntry**: Run hooks → save metadata
-  /// 7. **postProcess**: Run hooks → set [returnValue]
-  ///
-  /// Parameters:
-  /// - [hooks]: List of hooks to execute, already sorted by priority.
-  ///
-  /// Throws: [BreakHook] exceptions are caught and handled internally.
+  /// Groups hooks by stage, executes in order, handles storage I/O,
+  /// and catches [BreakHook] exceptions.
   Future<void> queue(List<PVCacheHook> hooks) async {
     try {
       // Group hooks by EventFlow
@@ -227,9 +149,6 @@ class PVCtx {
   }
 
   /// Execute hooks in a specific stage.
-  ///
-  /// Runs each hook's [PVCacheHook.hookFunction] in order.
-  /// If a hook throws [BreakHook], it propagates up to [queue].
   Future<void> _runHooks(List<PVCacheHook>? hooks) async {
     if (hooks == null) return;
     for (final hook in hooks) {
@@ -237,19 +156,9 @@ class PVCtx {
     }
   }
 
-  /// Storage proxy for cache entries (the actual data).
+  /// Storage proxy for cache entries.
   ///
-  /// Provides [get], [put], and [delete] methods that route to the
-  /// configured [StorageType] for entries.
-  ///
-  /// Example:
-  /// ```dart
-  /// // In a storageUpdate hook
-  /// await ctx.entry.put(ctx.resolvedKey!, {'value': encryptedData});
-  ///
-  /// // In a storageRead hook
-  /// final data = await ctx.entry.get(ctx.resolvedKey!);
-  /// ```
+  /// Routes to configured [StorageType] for entry operations.
   PVCtxStorageProxy get entry => PVCtxStorageProxy(
     ctx: this,
     storageType: cache.entryStorageType,
@@ -258,21 +167,7 @@ class PVCtx {
 
   /// Storage proxy for metadata.
   ///
-  /// Provides [get], [put], and [delete] methods that route to the
-  /// configured [StorageType] for metadata.
-  ///
-  /// Metadata is typically stored separately from entries to allow:
-  /// - Different storage backends (e.g., entries persistent, metadata in-memory)
-  /// - Independent lifecycle (e.g., clear metadata without clearing entries)
-  ///
-  /// Example:
-  /// ```dart
-  /// // In a metaRead hook
-  /// final metadata = await ctx.meta.get(ctx.resolvedKey!);
-  ///
-  /// // In a metaUpdatePostEntry hook
-  /// await ctx.meta.put(ctx.resolvedKey!, ctx.runtimeMeta);
-  /// ```
+  /// Routes to configured [StorageType] for metadata operations.
   PVCtxStorageProxy get meta => PVCtxStorageProxy(
     ctx: this,
     storageType: cache.metadataStorageType,
@@ -280,44 +175,19 @@ class PVCtx {
   );
 }
 
-/// Storage abstraction for accessing entries and metadata.
+/// Storage abstraction for entries and metadata.
 ///
-/// PVCtxStorageProxy routes storage operations to the appropriate backend
-/// based on [StorageType]:
-/// - [StorageType.stdSembast]: Persistent file-based database
-/// - [StorageType.inMemory]: Session-only in-memory database
-/// - [StorageType.secureStorage]: Platform keychain (for keys/sensitive data)
+/// Routes operations to backends: stdSembast (persistent), inMemory (session), secureStorage (keychain).
 ///
-/// The proxy automatically handles:
-/// - Store name resolution (environment + metadata suffix)
-/// - Database instance retrieval
-/// - Platform-specific storage APIs
-///
-/// Used internally by hooks through [PVCtx.entry] and [PVCtx.meta].
-///
-/// Example:
-/// ```dart
-/// // Get entry
-/// final data = await ctx.entry.get('user:123');
-///
-/// // Put metadata
-/// await ctx.meta.put('user:123', {'ttl': 3600});
-///
-/// // Delete entry
-/// await ctx.entry.delete('user:123');
-/// ```
+/// Used internally via [PVCtx.entry] and [PVCtx.meta].
 class PVCtxStorageProxy {
   /// The context this proxy belongs to.
   final PVCtx ctx;
 
-  /// Storage backend to use (stdSembast, inMemory, or secureStorage).
+  /// Storage backend type (stdSembast, inMemory, or secureStorage).
   final StorageType storageType;
 
   /// Whether this proxy is for metadata (true) or entries (false).
-  ///
-  /// Affects store name resolution:
-  /// - Entries: Use environment name directly (e.g., 'prod')
-  /// - Metadata: Use metadata name function (e.g., 'prod_metadata')
   final bool isMetadata;
 
   /// Create a storage proxy.
@@ -331,22 +201,7 @@ class PVCtxStorageProxy {
 
   /// Retrieve a value from storage.
   ///
-  /// Routes to appropriate backend:
-  /// - **stdSembast/inMemory**: Returns map from sembast record
-  /// - **secureStorage**: Returns `{'value': <string>}` from platform keychain
-  ///
-  /// Parameters:
-  /// - [key]: Storage key to retrieve.
-  ///
-  /// Returns: Map containing the value, or `null` if not found.
-  ///
-  /// Example:
-  /// ```dart
-  /// final data = await ctx.entry.get('user:123');
-  /// if (data != null) {
-  ///   final value = data['value'];
-  /// }
-  /// ```
+  /// Returns map from backend, or null if not found.
   Future<Map<String, dynamic>?> get(String key) async {
     switch (storageType) {
       case StorageType.inMemory:
@@ -376,19 +231,6 @@ class PVCtxStorageProxy {
   }
 
   /// Store a value in storage.
-  ///
-  /// Routes to appropriate backend:
-  /// - **stdSembast/inMemory**: Stores map in sembast record
-  /// - **secureStorage**: Stores `value['value']` as string in platform keychain
-  ///
-  /// Parameters:
-  /// - [key]: Storage key to store under.
-  /// - [value]: Map containing the data to store.
-  ///
-  /// Example:
-  /// ```dart
-  /// await ctx.entry.put('user:123', {'value': userData});
-  /// ```
   Future<void> put(String key, Map<String, dynamic> value) async {
     switch (storageType) {
       case StorageType.inMemory:
@@ -422,17 +264,6 @@ class PVCtxStorageProxy {
   }
 
   /// Delete a value from storage.
-  ///
-  /// Routes to appropriate backend to remove the entry.
-  ///
-  /// Parameters:
-  /// - [key]: Storage key to delete.
-  ///
-  /// Example:
-  /// ```dart
-  /// await ctx.entry.delete('user:123');
-  /// await ctx.meta.delete('user:123');
-  /// ```
   Future<void> delete(String key) async {
     switch (storageType) {
       case StorageType.inMemory:

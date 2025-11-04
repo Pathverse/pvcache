@@ -4,29 +4,28 @@ import 'package:crypto/crypto.dart';
 import 'package:pointycastle/export.dart';
 import 'package:pvcache/core/bridge.dart';
 
-/// Shared encryption utilities for PVCache hooks
+/// Shared encryption utilities for PVCache hooks.
 ///
-/// This module provides common encryption functions that can be used by
-/// multiple encryption-related hooks to avoid code duplication.
+/// Provides common encryption functions to avoid code duplication.
 
 // ignore: constant_identifier_names
 const String DEFAULT_ENCRYPTION_KEY_NAME = '_pvcache_encryption_key';
 
-/// AES-256-CTR encryption/decryption utilities
+/// AES-256-CTR encryption/decryption utilities.
 class AESCipher {
   final Uint8List _key;
   final String seed;
 
   AESCipher(this.seed) : _key = _deriveKey(seed);
 
-  /// Derive a 32-byte key from seed using SHA-256
+  /// Derive a 32-byte key from seed using SHA-256.
   static Uint8List _deriveKey(String seed) {
     final digest = SHA256Digest();
     final seedBytes = utf8.encode(seed);
     return digest.process(Uint8List.fromList(seedBytes));
   }
 
-  /// Encrypt data using AES-256-CTR with deterministic IV
+  /// Encrypt data using AES-256-CTR with deterministic IV.
   String encryptString(String data) {
     final plainBytes = utf8.encode(data);
 
@@ -54,7 +53,7 @@ class AESCipher {
     return base64.encode(result);
   }
 
-  /// Decrypt data using AES-256-CTR
+  /// Decrypt data using AES-256-CTR.
   String decryptString(String encryptedText) {
     final encryptedData = base64.decode(encryptedText);
 
@@ -87,8 +86,9 @@ class AESCipher {
     }
   }
 
-  /// Generate deterministic IV based on content + seed
-  /// Uses length-prefixed encoding to avoid collisions
+  /// Generate deterministic IV based on content + seed.
+  ///
+  /// Uses length-prefixed encoding to avoid collisions.
   Uint8List _generateDeterministicIV(String data) {
     final seedBytes = utf8.encode(seed);
     final dataBytes = utf8.encode(data);
@@ -115,7 +115,7 @@ class AESCipher {
     return Uint8List.fromList(hash.sublist(0, 16));
   }
 
-  /// Encrypt with a random nonce (for selective encryption where IV collision doesn't matter)
+  /// Encrypt with random nonce (for selective encryption).
   String encryptStringWithNonce(String data, String nonce) {
     final plainBytes = utf8.encode(data);
 
@@ -143,7 +143,7 @@ class AESCipher {
     return base64.encode(result);
   }
 
-  /// Generate IV from nonce
+  /// Generate IV from nonce.
   Uint8List _generateNonceIV(String nonce) {
     final nonceBytes = utf8.encode(nonce);
     final digest = SHA256Digest();
@@ -152,14 +152,9 @@ class AESCipher {
   }
 }
 
-/// Get or generate encryption key from secure storage
+/// Get or generate encryption key from secure storage.
 ///
-/// This function is used by all encryption hooks to retrieve or create
-/// encryption keys. Keys are stored in flutter_secure_storage.
-///
-/// [keyName] - Name of the key in secure storage
-///
-/// Returns the encryption key as a string
+/// Keys stored in flutter_secure_storage.
 Future<String> getOrCreateEncryptionKey(String keyName) async {
   // Try to read existing key
   final existingKey = await PVBridge.secureStorage.read(key: keyName);
@@ -179,9 +174,9 @@ Future<String> getOrCreateEncryptionKey(String keyName) async {
   return newKey;
 }
 
-/// Generate a random nonce for one-time use
+/// Generate random nonce for one-time use.
 ///
-/// Used for selective encryption where each field needs a unique nonce
+/// Used for selective encryption where each field needs unique nonce.
 String generateNonce() {
   final timestamp = DateTime.now().millisecondsSinceEpoch;
   final micro = DateTime.now().microsecond;

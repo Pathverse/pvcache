@@ -3,32 +3,22 @@ import 'package:pvcache/core/enums.dart';
 
 /// TTL (Time-To-Live) Hook System
 ///
-/// This system implements cache expiration by:
-/// 1. Reading 'ttl' from metadata when putting entries and converting to expiration timestamp
-/// 2. Checking expiration before returning entries (get operation)
-/// 3. Automatically removing expired entries
+/// Implements cache expiration:
+/// 1. Converts 'ttl' metadata to expiration timestamp
+/// 2. Checks expiration on get
+/// 3. Auto-removes expired entries
 ///
 /// Usage:
 /// ```dart
 /// final cache = PVCache(
 ///   env: 'myCache',
-///   hooks: [
-///     createTTLSetHook(),
-///     createTTLCheckHook(),
-///   ],
+///   hooks: [createTTLSetHook(), createTTLCheckHook()],
 ///   defaultMetadata: {},
 /// );
-///
-/// // Use with custom TTL (in seconds)
 /// await cache.put('key', 'value', metadata: {'ttl': 3600}); // 1 hour
 /// ```
 
-/// Creates a hook that converts 'ttl' seconds to '_ttl_timestamp'
-///
-/// This hook runs during the `metaUpdatePriorEntry` stage to read the 'ttl'
-/// value from initialMeta and convert it to an absolute '_ttl_timestamp'.
-///
-/// [priority] - Hook priority (default: 0)
+/// Creates a hook that converts 'ttl' seconds to '_ttl_timestamp'.
 PVCacheHook createTTLSetHook({int priority = 0}) {
   return PVCacheHook(
     eventString: 'ttl_set',
@@ -55,17 +45,9 @@ PVCacheHook createTTLSetHook({int priority = 0}) {
   );
 }
 
-/// Creates a hook that checks if an entry has expired before returning it
+/// Creates a hook that checks if entry expired before returning.
 ///
-/// This hook runs during the `metaRead` stage (after metadata is loaded)
-/// and throws a BreakHook exception if the entry has expired.
-///
-/// When expired:
-/// - Throws BreakHook to stop execution
-/// - Automatically deletes the expired entry
-/// - Returns null to the caller
-///
-/// [priority] - Hook priority (default: 0)
+/// Runs during metaRead stage. Deletes expired entries and returns null.
 PVCacheHook createTTLCheckHook({int priority = 0}) {
   return PVCacheHook(
     eventString: 'ttl_check',
@@ -94,9 +76,7 @@ PVCacheHook createTTLCheckHook({int priority = 0}) {
   );
 }
 
-/// Creates a complete TTL hook set with both set and check hooks
-///
-/// This is a convenience function that creates all necessary TTL hooks.
+/// Creates complete TTL hook set.
 List<PVCacheHook> createTTLHooks() {
   return [createTTLSetHook(), createTTLCheckHook()];
 }

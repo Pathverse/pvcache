@@ -1,19 +1,14 @@
-/// Utilities for working with nested data structures using dot notation paths
+/// Utilities for nested data structures using dot notation paths.
 ///
-/// Example paths:
-/// - "user.name" -> data['user']['name']
-/// - "settings.theme.color" -> data['settings']['theme']['color']
-/// - "items.0.title" -> data['items'][0]['title']
+/// Example: "user.name" -> data['user']['name']
 library;
 
-/// Get a value from a nested structure using dot notation path
+/// Get value from nested structure using dot notation.
 ///
 /// Example:
 /// ```dart
-/// final data = {'user': {'name': 'John', 'age': 30}};
-/// final name = getNestedValue(data, 'user.name'); // 'John'
-/// final age = getNestedValue(data, 'user.age'); // 30
-/// final missing = getNestedValue(data, 'user.email'); // null
+/// final data = {'user': {'name': 'John'}};
+/// getNestedValue(data, 'user.name'); // 'John'
 /// ```
 dynamic getNestedValue(dynamic data, String path) {
   if (data == null) return null;
@@ -45,17 +40,9 @@ dynamic getNestedValue(dynamic data, String path) {
   return current;
 }
 
-/// Set a value in a nested structure using dot notation path
+/// Set value in nested structure using dot notation.
 ///
-/// Creates intermediate maps/lists as needed.
-/// Returns true if successful, false if path is invalid.
-///
-/// Example:
-/// ```dart
-/// final data = <String, dynamic>{};
-/// setNestedValue(data, 'user.name', 'John'); // data = {'user': {'name': 'John'}}
-/// setNestedValue(data, 'user.age', 30); // data = {'user': {'name': 'John', 'age': 30}}
-/// ```
+/// Creates intermediate maps/lists as needed. Returns true if successful.
 bool setNestedValue(dynamic data, String path, dynamic value) {
   if (data == null) return false;
   if (!(data is Map || data is List)) return false;
@@ -119,14 +106,7 @@ bool setNestedValue(dynamic data, String path, dynamic value) {
   return false;
 }
 
-/// Check if a nested path exists in the data structure
-///
-/// Example:
-/// ```dart
-/// final data = {'user': {'name': 'John'}};
-/// hasNestedPath(data, 'user.name'); // true
-/// hasNestedPath(data, 'user.age'); // false
-/// ```
+/// Check if nested path exists.
 bool hasNestedPath(dynamic data, String path) {
   if (data == null) return false;
 
@@ -160,16 +140,9 @@ bool hasNestedPath(dynamic data, String path) {
   return true;
 }
 
-/// Delete a value at a nested path
+/// Delete value at nested path.
 ///
-/// Returns true if the value was deleted, false if path doesn't exist.
-///
-/// Example:
-/// ```dart
-/// final data = {'user': {'name': 'John', 'age': 30}};
-/// deleteNestedValue(data, 'user.age'); // true, data = {'user': {'name': 'John'}}
-/// deleteNestedValue(data, 'user.email'); // false, path doesn't exist
-/// ```
+/// Returns true if deleted, false if path doesn't exist.
 bool deleteNestedValue(dynamic data, String path) {
   if (data == null) return false;
   if (!(data is Map || data is List)) return false;

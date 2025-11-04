@@ -5,48 +5,33 @@ import 'package:pvcache/utils/encrypt.dart';
 
 /// Encryption Hook System
 ///
-/// This system implements automatic encryption/decryption using AES-256-CTR.
-/// Based on production-ready encryption from pvcache_hive package.
+/// Automatic encryption/decryption using AES-256-CTR.
 ///
 /// Features:
-/// - AES-256-CTR encryption (no padding required, handles any length)
-/// - Automatic key generation and secure storage
-/// - Deterministic IV generation for consistent caching
-/// - Cross-platform compatibility
-/// - Base64 encoding for safe storage
+/// - AES-256-CTR (no padding, handles any length)
+/// - Auto key generation and secure storage
+/// - Deterministic IV for consistent caching
+/// - Cross-platform
+/// - Base64 encoding
 ///
 /// Usage:
 /// ```dart
-/// // Auto-generate and store key
+/// // Auto-generate key
 /// final cache = PVCache(
 ///   env: 'myCache',
 ///   hooks: createEncryptionHooks(),
 ///   defaultMetadata: {},
 /// );
 ///
-/// // Use custom key
+/// // Custom key
 /// final cache = PVCache(
 ///   env: 'myCache',
 ///   hooks: createEncryptionHooks(encryptionKey: 'my-secret-key'),
 ///   defaultMetadata: {},
 /// );
-///
-/// // Use custom key name in secure storage
-/// final cache = PVCache(
-///   env: 'myCache',
-///   hooks: createEncryptionHooks(keyName: '_my_custom_key'),
-///   defaultMetadata: {},
-/// );
 /// ```
 
-/// Creates a hook that encrypts entry values before storage
-///
-/// This hook runs during the `storageUpdate` stage (before write) to encrypt
-/// the entry value using AES-256-CTR encryption.
-///
-/// [encryptionKey] - Optional custom encryption key
-/// [keyName] - Key name in secure storage (default: _pvcache_encryption_key)
-/// [priority] - Hook priority (default: -50, runs before storage write)
+/// Creates a hook that encrypts entry values before storage.
 PVCacheHook createEncryptionEncryptHook({
   String? encryptionKey,
   String keyName = DEFAULT_ENCRYPTION_KEY_NAME,
@@ -80,14 +65,7 @@ PVCacheHook createEncryptionEncryptHook({
   );
 }
 
-/// Creates a hook that decrypts entry values after retrieval
-///
-/// This hook runs during the `postProcess` stage (after storage and metadata reads)
-/// to decrypt the entry value using AES-256-CTR encryption.
-///
-/// [encryptionKey] - Optional custom encryption key (must match encrypt hook)
-/// [keyName] - Key name in secure storage (must match encrypt hook)
-/// [priority] - Hook priority (default: 0)
+/// Creates a hook that decrypts entry values after retrieval.
 PVCacheHook createEncryptionDecryptHook({
   String? encryptionKey,
   String keyName = DEFAULT_ENCRYPTION_KEY_NAME,
@@ -122,15 +100,9 @@ PVCacheHook createEncryptionDecryptHook({
   );
 }
 
-/// Creates a complete encryption hook set
+/// Creates complete encryption hook set.
 ///
-/// This is a convenience function that creates both encrypt and decrypt hooks.
-///
-/// [encryptionKey] - Optional custom encryption key
-/// [keyName] - Key name in secure storage (default: _pvcache_encryption_key)
-///
-/// If no key is provided, a key will be automatically generated and stored
-/// in secure storage under the specified keyName.
+/// Auto-generates and stores key if not provided.
 List<PVCacheHook> createEncryptionHooks({
   String? encryptionKey,
   String keyName = DEFAULT_ENCRYPTION_KEY_NAME,

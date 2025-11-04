@@ -5,10 +5,10 @@ import 'package:sembast/sembast.dart';
 
 /// LRU (Least Recently Used) Hook System
 ///
-/// This system implements cache eviction by:
-/// 1. Tracking access count for each entry in metadata
-/// 2. Storing a global access counter in a reserved key
-/// 3. Evicting the least recently used entry when max size is reached
+/// Implements cache eviction:
+/// 1. Tracks access count per entry in metadata
+/// 2. Stores global counter in reserved key
+/// 3. Evicts least recently used when max size reached
 ///
 /// Usage:
 /// ```dart
@@ -22,12 +22,7 @@ import 'package:sembast/sembast.dart';
 // ignore: constant_identifier_names
 const String _LRU_COUNTER_KEY = '_lru_global_counter';
 
-/// Creates a hook that updates access count on get operations
-///
-/// This hook runs during the `metaRead` stage to update the last access
-/// count for entries that are being read.
-///
-/// [priority] - Hook priority (default: 100, runs after other metaRead hooks)
+/// Creates a hook that updates access count on get.
 PVCacheHook createLRUTrackAccessHook({int priority = 100}) {
   return PVCacheHook(
     eventString: 'lru_track_access',
@@ -51,15 +46,9 @@ PVCacheHook createLRUTrackAccessHook({int priority = 100}) {
   );
 }
 
-/// Creates a hook that updates access count on put operations and evicts if needed
+/// Creates a hook that updates access count on put and evicts if needed.
 ///
-/// This hook runs during the `metaUpdatePriorEntry` stage to:
-/// 1. Set the access count for new entries
-/// 2. Check if cache size exceeds max
-/// 3. Evict the least recently used entry if needed
-///
-/// [max] - Maximum number of entries in the cache
-/// [priority] - Hook priority (default: 0)
+/// Runs during metaUpdatePriorEntry. Sets access count and evicts LRU entry if cache exceeds max.
 PVCacheHook createLRUEvictHook({required int max, int priority = 0}) {
   return PVCacheHook(
     eventString: 'lru_evict',
@@ -86,7 +75,7 @@ PVCacheHook createLRUEvictHook({required int max, int priority = 0}) {
   );
 }
 
-/// Helper function to evict the least recently used entry
+/// Helper to evict least recently used entry.
 Future<void> _evictIfNeeded(PVCtx ctx, int max) async {
   // Get all metadata entries to count and find LRU
   // We need to read from the store directly
@@ -130,11 +119,7 @@ Future<void> _evictIfNeeded(PVCtx ctx, int max) async {
   }
 }
 
-/// Creates a complete LRU hook set with all necessary hooks
-///
-/// This is a convenience function that creates all LRU hooks at once.
-///
-/// [max] - Maximum number of entries in the cache
+/// Creates complete LRU hook set.
 List<PVCacheHook> createLRUHooks({required int max}) {
   return [createLRUEvictHook(max: max), createLRUTrackAccessHook()];
 }

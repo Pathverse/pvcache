@@ -6,9 +6,8 @@ import 'package:pvcache/utils/nested.dart';
 
 /// Selective Encryption Hook System
 ///
-/// This system encrypts only specific fields within cached data, rather than
-/// encrypting the entire value. Each field is encrypted with a unique nonce
-/// stored in metadata.
+/// Encrypts specific fields rather than entire value.
+/// Each field gets unique nonce stored in metadata.
 ///
 /// Usage:
 /// ```dart
@@ -18,52 +17,20 @@ import 'package:pvcache/utils/nested.dart';
 ///   defaultMetadata: {},
 /// );
 ///
-/// // Encrypt specific fields
 /// await cache.put(
 ///   'user:123',
-///   {
-///     'id': 123,
-///     'name': 'John',
-///     'email': 'john@example.com',
-///     'password': 'secret123',
-///     'profile': {
-///       'ssn': '123-45-6789',
-///       'phone': '555-1234'
-///     }
-///   },
-///   metadata: {
-///     'secure': ['password', 'profile.ssn']
-///   }
+///   {'name': 'John', 'password': 'secret', 'profile': {'ssn': '123-45-6789'}},
+///   metadata: {'secure': ['password', 'profile.ssn']}
 /// );
-///
-/// // On retrieval, those fields are automatically decrypted
-/// final user = await cache.get('user:123');
-/// print(user['password']); // 'secret123' (decrypted)
-/// print(user['name']); // 'John' (never encrypted)
 /// ```
 ///
 /// Features:
-/// - Selective field encryption via dot notation paths
-/// - Unique nonce per field stored in metadata
+/// - Dot notation paths
+/// - Unique nonce per field
 /// - Non-sensitive fields remain readable
-/// - Works with nested structures (maps and lists)
-/// - Compatible with other hooks (TTL, etc.)
+/// - Works with nested structures
 
-/// Creates a hook that selectively encrypts specified fields before storage
-///
-/// This hook runs during the `storageUpdate` stage (before write) and encrypts
-/// only the fields specified in the 'secure' metadata array.
-///
-/// Metadata format:
-/// ```dart
-/// {
-///   'secure': ['password', 'profile.ssn', 'tokens.0.secret']
-/// }
-/// ```
-///
-/// [encryptionKey] - Optional custom encryption key
-/// [keyName] - Key name in secure storage (default: _pvcache_encryption_key)
-/// [priority] - Hook priority (default: -50, runs before storage write)
+/// Creates a hook that selectively encrypts specified fields.
 PVCacheHook createSelectiveEncryptionEncryptHook({
   String? encryptionKey,
   String keyName = DEFAULT_ENCRYPTION_KEY_NAME,
@@ -128,14 +95,7 @@ PVCacheHook createSelectiveEncryptionEncryptHook({
   );
 }
 
-/// Creates a hook that decrypts selectively encrypted fields after retrieval
-///
-/// This hook runs during the `postProcess` stage (after storage and metadata reads)
-/// and decrypts only the fields that were encrypted, using their stored nonces.
-///
-/// [encryptionKey] - Optional custom encryption key (must match encrypt hook)
-/// [keyName] - Key name in secure storage (must match encrypt hook)
-/// [priority] - Hook priority (default: 0)
+/// Creates a hook that decrypts selectively encrypted fields.
 PVCacheHook createSelectiveEncryptionDecryptHook({
   String? encryptionKey,
   String keyName = DEFAULT_ENCRYPTION_KEY_NAME,
@@ -193,16 +153,9 @@ PVCacheHook createSelectiveEncryptionDecryptHook({
   );
 }
 
-/// Creates a complete selective encryption hook set
+/// Creates complete selective encryption hook set.
 ///
-/// This is a convenience function that creates both encrypt and decrypt hooks
-/// for selective field encryption.
-///
-/// [encryptionKey] - Optional custom encryption key
-/// [keyName] - Key name in secure storage (default: _pvcache_encryption_key)
-///
-/// If no key is provided, a key will be automatically generated and stored
-/// in secure storage under the specified keyName.
+/// Auto-generates and stores key if not provided.
 List<PVCacheHook> createSelectiveEncryptionHooks({
   String? encryptionKey,
   String keyName = DEFAULT_ENCRYPTION_KEY_NAME,
