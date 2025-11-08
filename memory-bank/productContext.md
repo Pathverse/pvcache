@@ -50,7 +50,32 @@ Hook checks metadata timestamps during `get` operations to determine if entry ha
 ### Example 2: LRU Plugin
 Hook updates access timestamps in metadata and evicts least recently used entries when cache size limit is reached.
 
-### Example 3: Cache Warming
+### Example 3: Macro Get (Pattern-Based Auto-Fetch)
+Configure patterns that automatically fetch and cache data on cache miss:
+```dart
+final cache = PVCache(
+  env: 'prod',
+  hooks: [createTTLHook()],
+  macroGetHandlers: {
+    RegExp(r'^user:\d+$'): (key) async {
+      final userId = key.split(':')[1];
+      return await api.fetchUser(userId);
+    },
+  },
+  macroGetDefaultMetadata: {'ttl': 3600},
+);
+
+// Automatically fetches from API if not cached
+final user = await cache.get('user:123');
+```
+
+Works seamlessly with:
+- TTL: Auto-refetches after expiration
+- LRU: Auto-refetches after eviction  
+- Encryption: Fetched data can be encrypted
+- Any hook combination
+
+### Example 4: Cache Warming
 Hook pre-loads frequently accessed data during `preProcess` events.
 
 ## Design Goals

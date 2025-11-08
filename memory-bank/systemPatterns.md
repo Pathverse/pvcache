@@ -119,6 +119,34 @@
 
 ## Critical Implementation Paths
 
+### Macro Get (Pattern-Based Auto-Fetch)
+**Location**: `PVCache.get()` method (post-hook-pipeline)
+
+**Flow**:
+1. Execute full hook pipeline
+2. Check if returnValue is null
+3. If null, iterate through macroGetHandlers
+4. For each pattern, check if key matches using `_matchesPattern()`
+5. On match, call fetch function with key
+6. If fetch succeeds (not null), cache data with merged metadata
+7. Return fetched data
+
+**Pattern Matching**:
+- String patterns: exact match OR prefix match (`key == pattern || key.startsWith(pattern)`)
+- RegExp patterns: `pattern.hasMatch(key)`
+- First matching handler wins
+
+**Integration Points**:
+- Works with TTL: auto-refetches after expiration
+- Works with LRU: auto-refetches after eviction
+- Works with encryption: fetched data can be encrypted
+- Works with any hook: runs after ALL hooks complete
+
+**Design Rationale**:
+- Initially attempted as hook but BreakHook prevented execution
+- Core integration ensures it runs regardless of hook behavior
+- Scales to all future hooks without special cases
+
 ### Cache Put Flow
 1. Create `PVCtx` with key, value, metadata
 2. Queue through `_orderedPutHooks`
@@ -140,7 +168,13 @@
    - storageRead (retrieve from storage/memory)
    - metaUpdatePostEntry (update access time for LRU)
    - postProcess
-4. Return `ctx.entryValue`
+4. **Macro Get Check** (post-pipeline):
+   - If returnValue is null (miss, expiration, eviction)
+   - Check if key matches any macroGetHandlers pattern
+   - If match found, fetch data via handler function
+   - Cache fetched data with macroGetDefaultMetadata
+   - Return fetched data
+5. Return `ctx.entryValue` or fetched data
 
 ### Hook Ordering
 - Hooks are ordered by `EventFlow` first (enum order)
