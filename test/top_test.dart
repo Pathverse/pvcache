@@ -307,6 +307,7 @@ void main() {
   });
 
   group('PVCacheTop with Metadata', () {
+    // ignore: unused_local_variable
     late PVCache cache;
 
     setUp(() {
@@ -369,6 +370,7 @@ void main() {
   });
 
   group('PVCacheTop Data Types', () {
+    // ignore: unused_local_variable
     late PVCache cache;
 
     setUp(() {

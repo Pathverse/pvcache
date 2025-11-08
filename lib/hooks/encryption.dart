@@ -94,7 +94,7 @@ PVCacheHook createEncryptionDecryptHook({
       } catch (e) {
         // If decryption fails, leave as null
         ctx.entryValue = null;
-        print('Warning: Failed to decrypt entry: $e');
+        throw Exception('Warning: Failed to decrypt entry: $e');
       }
     },
   );

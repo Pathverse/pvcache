@@ -29,6 +29,23 @@ part 'hook.dart';
 /// );
 /// await cache.put('session', token, metadata: {'ttl_seconds': 3600});
 /// ```
+///
+/// Example - Cache with macro get (pattern-based auto-fetch):
+/// ```dart
+/// final cache = PVCache(
+///   env: 'prod',
+///   hooks: [createTTLHook()],
+///   defaultMetadata: {},
+///   macroGetHandlers: {
+///     RegExp(r'^user:\d+$'): (key) async {
+///       final userId = key.split(':')[1];
+///       return await api.fetchUser(userId);
+///     },
+///   },
+/// );
+/// // Automatically fetches from API if not cached
+/// final user = await cache.get('user:123');
+/// ```
 class PVCache {
   /// Map of all cache instances by environment name.
   static final Map<String, PVCache> instances = {};
@@ -38,6 +55,15 @@ class PVCache {
 
   /// Default metadata applied to all operations if not overridden.
   final Map<String, dynamic> defaultMetadata;
+
+  /// Pattern-based auto-fetch handlers.
+  ///
+  /// When a get() returns null (cache miss or expired), checks if the key
+  /// matches any pattern and automatically fetches and caches the data.
+  final Map<Pattern, Future<dynamic> Function(String key)> macroGetHandlers;
+
+  /// Default metadata to apply when macro get fetches and caches data.
+  final Map<String, dynamic> macroGetDefaultMetadata;
 
   /// Storage backend for cache entries.
   ///
@@ -65,6 +91,19 @@ class PVCache {
   ///   defaultMetadata: {},
   /// );
   /// ```
+  ///
+  /// Example with macro get:
+  /// ```dart
+  /// final cache = PVCache(
+  ///   env: 'prod',
+  ///   hooks: [createTTLHook()],
+  ///   defaultMetadata: {},
+  ///   macroGetHandlers: {
+  ///     RegExp(r'^user:\d+$'): (key) async => await api.fetchUser(key),
+  ///   },
+  ///   macroGetDefaultMetadata: {'ttl': 3600},
+  /// );
+  /// ```
   PVCache({
     required this.env,
     required List<PVCacheHook> hooks,
@@ -73,6 +112,8 @@ class PVCache {
     this.metadataStorageType = StorageType.stdSembast,
     this.noMetadataStoreIfEmpty = false,
     String Function(String)? metadataNameFunction,
+    this.macroGetHandlers = const {},
+    this.macroGetDefaultMetadata = const {},
   }) : metadataNameFunction =
            metadataNameFunction ?? ((env) => '${env}_metadata') {
     PVCache.instances[env] = this;
@@ -185,6 +226,9 @@ class PVCache {
   ///
   /// Returns `null` if not found or expired (based on hooks like TTL).
   ///
+  /// If macro get handlers are configured and key matches a pattern,
+  /// automatically fetches and caches the data on cache miss.
+  ///
   /// Example:
   /// ```dart
   /// final user = await cache.get('user:123');
@@ -197,7 +241,48 @@ class PVCache {
       initialMeta: metadata ?? {},
     );
     await ctx.queue(_orderedGetHooks);
+
+    // If cache miss and macro get handlers configured, try to fetch
+    if (ctx.returnValue == null && macroGetHandlers.isNotEmpty) {
+      for (final entry in macroGetHandlers.entries) {
+        final pattern = entry.key;
+        final fetchFn = entry.value;
+
+        // Check if key matches pattern
+        if (_matchesPattern(key, pattern)) {
+          try {
+            // Fetch the data
+            final fetched = await fetchFn(key);
+
+            if (fetched != null) {
+              // Merge default macro get metadata with request metadata
+              final fetchMetadata = {...macroGetDefaultMetadata, ...?metadata};
+
+              // Cache the fetched data
+              await put(key, fetched, metadata: fetchMetadata);
+              return fetched;
+            }
+          } catch (e) {
+            // If fetch fails, continue to next pattern
+            continue;
+          }
+        }
+      }
+    }
+
     return ctx.returnValue;
+  }
+
+  /// Check if a key matches a pattern (String or RegExp).
+  bool _matchesPattern(String key, Pattern pattern) {
+    if (pattern is String) {
+      // Exact match or prefix match
+      return key == pattern || key.startsWith(pattern);
+    } else if (pattern is RegExp) {
+      // Regex match
+      return pattern.hasMatch(key);
+    }
+    return false;
   }
 
   /// Delete a value from the cache.
