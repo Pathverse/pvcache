@@ -222,7 +222,11 @@ class PVCtxStorageProxy {
 
       case StorageType.stdSembast:
         final bridge = PVBridge();
-        final db = await bridge.getDatabaseForType(storageType);
+        final db = await bridge.getDatabaseForType(
+          storageType,
+          heavy: ctx.cache.heavy,
+          env: ctx.cache.env,
+        );
         final storeName = isMetadata
             ? ctx.cache.metadataNameFunction!(ctx.cache.env)
             : ctx.cache.env;
@@ -252,7 +256,11 @@ class PVCtxStorageProxy {
 
       case StorageType.stdSembast:
         final bridge = PVBridge();
-        final db = await bridge.getDatabaseForType(storageType);
+        final db = await bridge.getDatabaseForType(
+          storageType,
+          heavy: ctx.cache.heavy,
+          env: ctx.cache.env,
+        );
         final storeName = isMetadata
             ? ctx.cache.metadataNameFunction!(ctx.cache.env)
             : ctx.cache.env;
@@ -285,7 +293,11 @@ class PVCtxStorageProxy {
 
       case StorageType.stdSembast:
         final bridge = PVBridge();
-        final db = await bridge.getDatabaseForType(storageType);
+        final db = await bridge.getDatabaseForType(
+          storageType,
+          heavy: ctx.cache.heavy,
+          env: ctx.cache.env,
+        );
         final storeName = isMetadata
             ? ctx.cache.metadataNameFunction!(ctx.cache.env)
             : ctx.cache.env;
@@ -305,7 +317,11 @@ class PVCtxStorageProxy {
       case StorageType.inMemory:
       case StorageType.stdSembast:
         final bridge = PVBridge();
-        final db = await bridge.getDatabaseForType(storageType);
+        final db = await bridge.getDatabaseForType(
+          storageType,
+          heavy: ctx.cache.heavy,
+          env: ctx.cache.env,
+        );
         final storeName = isMetadata
             ? ctx.cache.metadataNameFunction!(ctx.cache.env)
             : ctx.cache.env;

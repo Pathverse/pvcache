@@ -15,6 +15,7 @@ import 'package:pvcache/core/enums.dart';
 /// - Database routing by [StorageType]
 /// - Store management
 /// - Secure storage integration
+/// - Heavy cache isolation (separate database files per environment on non-web)
 ///
 /// Example:
 /// ```dart
@@ -28,6 +29,9 @@ class PVBridge {
 
   /// Persistent database instance (sembast or sembast_web).
   static Database? _persistentDatabase;
+
+  /// Heavy cache databases by environment (non-web only).
+  static final Map<String, Database> _heavyDatabases = {};
 
   /// In-memory database instance (sembast_memory).
   static Database? _inMemoryDatabase;
@@ -74,8 +78,26 @@ class PVBridge {
       return _persistentDatabase!;
     }
 
-    _persistentDatabase = await _initPersistentDatabase();
+    _persistentDatabase = await _initPersistentDatabase(null);
     return _persistentDatabase!;
+  }
+
+  /// Get or initialize heavy cache database for a specific environment.
+  ///
+  /// Only on non-web platforms. Creates separate database file pv{env}.db.
+  /// Web platforms use the shared persistent database.
+  Future<Database> getHeavyDatabase(String env) async {
+    if (kIsWeb) {
+      // Web doesn't support separate databases, use shared
+      return await persistentDatabase;
+    }
+
+    if (_heavyDatabases.containsKey(env)) {
+      return _heavyDatabases[env]!;
+    }
+
+    _heavyDatabases[env] = await _initPersistentDatabase(env);
+    return _heavyDatabases[env]!;
   }
 
   /// Get or initialize in-memory database.
@@ -95,11 +117,18 @@ class PVBridge {
   /// Get database for the storage type.
   ///
   /// Throws [UnsupportedError] for secureStorage (uses flutter_secure_storage directly).
-  Future<Database> getDatabaseForType(StorageType type) async {
+  Future<Database> getDatabaseForType(
+    StorageType type, {
+    bool heavy = false,
+    String? env,
+  }) async {
     switch (type) {
       case StorageType.inMemory:
         return await inMemoryDatabase;
       case StorageType.stdSembast:
+        if (heavy && env != null) {
+          return await getHeavyDatabase(env);
+        }
         return await persistentDatabase;
       case StorageType.secureStorage:
         throw UnsupportedError('Secure storage does not use sembast database');
@@ -107,17 +136,22 @@ class PVBridge {
   }
 
   /// Initialize persistent database by platform.
-  Future<Database> _initPersistentDatabase() async {
+  ///
+  /// If [env] is provided, creates a heavy cache database: pv{env}.db
+  Future<Database> _initPersistentDatabase(String? env) async {
     if (testMode) {
       // Use in-memory database for testing
-      return await databaseFactoryMemory.openDatabase('test.db');
+      final dbName = env != null ? 'test_$env.db' : 'test.db';
+      return await databaseFactoryMemory.openDatabase(dbName);
     } else if (kIsWeb) {
       // For web, just pass the database name (stored in IndexedDB)
+      // Web doesn't benefit from separate databases
       return await dbFactory.openDatabase('pvcache');
     } else {
       // For mobile/desktop, use the full path
       final appDocDir = await getApplicationDocumentsDirectory();
-      final dbPath = join(appDocDir.path, 'pvcache.db');
+      final dbName = env != null ? 'pv$env.db' : 'pvcache.db';
+      final dbPath = join(appDocDir.path, dbName);
       return await dbFactory.openDatabase(dbPath);
     }
   }
@@ -128,6 +162,11 @@ class PVBridge {
       await _persistentDatabase!.close();
       _persistentDatabase = null;
     }
+    // Close all heavy cache databases
+    for (final db in _heavyDatabases.values) {
+      await db.close();
+    }
+    _heavyDatabases.clear();
     if (_inMemoryDatabase != null) {
       await _inMemoryDatabase!.close();
       _inMemoryDatabase = null;

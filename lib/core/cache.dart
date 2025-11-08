@@ -79,6 +79,10 @@ class PVCache {
   /// Function to generate metadata store name. Defaults to '${env}_metadata'.
   final String Function(String)? metadataNameFunction;
 
+  /// whether this cache is considered heavy
+  /// only useful for non-web platforms, this will create separate databases to provide on demand loading
+  final bool heavy;
+
   /// Create a new cache instance.
   ///
   /// Hooks are sorted by EventFlow stage and priority automatically.
@@ -114,6 +118,7 @@ class PVCache {
     String Function(String)? metadataNameFunction,
     this.macroGetHandlers = const {},
     this.macroGetDefaultMetadata = const {},
+    this.heavy = false,
   }) : metadataNameFunction =
            metadataNameFunction ?? ((env) => '${env}_metadata') {
     PVCache.instances[env] = this;

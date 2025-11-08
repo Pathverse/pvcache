@@ -117,10 +117,8 @@ void main() {
         metadataStorageType: StorageType.inMemory,
       );
 
-      final result = await cacheDecrypt.get('entry');
-
-      // Should return null due to decryption failure
-      expect(result, isNull);
+      // Should throw exception due to decryption failure
+      expect(() async => await cacheDecrypt.get('entry'), throwsException);
     });
 
     test('Empty string encryption and decryption', () async {
