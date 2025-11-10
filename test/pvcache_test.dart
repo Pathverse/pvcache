@@ -230,6 +230,11 @@ void main() {
       );
     });
 
+    tearDown(() async {
+      // Clean up cache after each test
+      await cache.clear();
+    });
+
     test('store and retrieve multiple entries', () async {
       await cache.put('user1', {'name': 'Alice', 'age': 25});
       await cache.put('user2', {'name': 'Bob', 'age': 30});
@@ -254,6 +259,35 @@ void main() {
       expect(await cache.get('key1'), equals('value1'));
       expect(await cache.get('key2'), isNull);
       expect(await cache.get('key3'), equals('value3'));
+    });
+
+    test('iterKeys returns all stored keys', () async {
+      await cache.put('user1', {'name': 'Alice'});
+      await cache.put('user2', {'name': 'Bob'});
+      await cache.put('user3', {'name': 'Charlie'});
+
+      final keys = await cache.iterKeys();
+
+      expect(keys, hasLength(3));
+      expect(keys, containsAll(['user1', 'user2', 'user3']));
+    });
+
+    test('iterKeys returns empty list when cache is empty', () async {
+      final keys = await cache.iterKeys();
+      expect(keys, isEmpty);
+    });
+
+    test('iterKeys reflects deletions', () async {
+      await cache.put('key1', 'value1');
+      await cache.put('key2', 'value2');
+      await cache.put('key3', 'value3');
+
+      await cache.delete('key2');
+
+      final keys = await cache.iterKeys();
+      expect(keys, hasLength(2));
+      expect(keys, containsAll(['key1', 'key3']));
+      expect(keys, isNot(contains('key2')));
     });
   });
 }
