@@ -1,3 +1,10 @@
+## 0.3.4
+- reorganize tests into `test/core/` and `test/hooks/` directories for better maintainability
+- split monolithic test files into individual component test files
+
+## 0.3.3
+- add `iterKeys()` method to iterate over all cache keys
+
 ## 0.3.2
 - add heavy cache support: separate database files (pv{env}.db) for heavy caches on non-web platforms
 - optimize database loading by allowing on-demand initialization per environment

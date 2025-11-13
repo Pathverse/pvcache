@@ -344,6 +344,34 @@ class PVCache {
     return ctx.returnValue != null;
   }
 
+  /// Iterate over all keys in the cache.
+  ///
+  /// Returns a list of all keys currently stored in the cache.
+  /// Note: This does not respect TTL or other hook logic - it returns raw keys.
+  /// Use with [get] to retrieve values and apply hook logic.
+  ///
+  /// Example:
+  /// ```dart
+  /// final keys = await cache.iterKeys();
+  /// for (final key in keys) {
+  ///   final value = await cache.get(key);
+  ///   print('$key: $value');
+  /// }
+  /// ```
+  Future<List<String>> iterKeys() async {
+    final bridge = PVBridge();
+    final db = await bridge.getDatabaseForType(
+      entryStorageType,
+      heavy: heavy,
+      env: env,
+    );
+    final store = bridge.getStore(env, entryStorageType);
+
+    // Get all record keys from the store
+    final keys = await store.findKeys(db);
+    return keys;
+  }
+
   /// Get cached value or compute and cache if missing.
   ///
   /// If key exists in cache, returns cached value.
