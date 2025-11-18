@@ -69,6 +69,7 @@ PVCacheHook createEncryptionEncryptHook({
 PVCacheHook createEncryptionDecryptHook({
   String? encryptionKey,
   String keyName = DEFAULT_ENCRYPTION_KEY_NAME,
+  bool throwOnFailure = true,
   int priority = 0,
 }) {
   return PVCacheHook(
@@ -94,7 +95,9 @@ PVCacheHook createEncryptionDecryptHook({
       } catch (e) {
         // If decryption fails, leave as null
         ctx.entryValue = null;
-        throw Exception('Warning: Failed to decrypt entry: $e');
+        if (throwOnFailure) {
+          throw Exception('Failed to decrypt entry: $e');
+        }
       }
     },
   );
@@ -106,9 +109,14 @@ PVCacheHook createEncryptionDecryptHook({
 List<PVCacheHook> createEncryptionHooks({
   String? encryptionKey,
   String keyName = DEFAULT_ENCRYPTION_KEY_NAME,
+  bool throwOnFailure = true,
 }) {
   return [
     createEncryptionEncryptHook(encryptionKey: encryptionKey, keyName: keyName),
-    createEncryptionDecryptHook(encryptionKey: encryptionKey, keyName: keyName),
+    createEncryptionDecryptHook(
+      encryptionKey: encryptionKey,
+      keyName: keyName,
+      throwOnFailure: throwOnFailure,
+    ),
   ];
 }

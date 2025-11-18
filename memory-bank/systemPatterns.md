@@ -204,3 +204,57 @@ Defines operation types:
 - `clear`: Remove all entries
 - `exists`: Check if entry exists
 - `iter`: (Future) Iterate entries
+
+## Encryption Recovery Pattern
+
+### Problem
+Encryption keys can change or become invalid, making existing encrypted data unreadable. This causes:
+- Silent data loss (decryption returns null)
+- No distinction between cache miss and decryption failure
+- No recovery mechanism
+
+### Solution
+Two-layer approach in separate files:
+
+**`lib/hooks/encryption.dart`** (Core Encryption):
+- `throwOnFailure` parameter (default `true`) on decrypt hook
+- Controls whether decryption failures throw exceptions
+- When `false`, silently returns `null` on failure
+
+**`lib/hooks/encryption_recovery.dart`** (Recovery System):
+- **Detection Hook**: `createEncryptionRecoveryHook()` runs AFTER decrypt (priority 10)
+  - Detects failures (encrypted flag but null value)
+  - Optional callback to handle failures
+  - Optional auto-clear of corrupted entries
+  - Optional error throwing
+- **Validation Hook**: `createEncryptionKeyValidationHook()` runs BEFORE operations (priority -100)
+  - Tests key validity on first access
+  - Creates test entry for future validation
+  - Triggers callback if key changed
+- **Utility Functions**:
+  - `rotateEncryptionKey()`: Change key and clear all data
+  - `clearEncryptedEntries()`: Remove only encrypted entries
+  - `validateEncryptionKey()`: Test if key works
+
+### Usage Pattern
+```dart
+final cache = PVCache(
+  env: 'myCache',
+  hooks: [
+    ...createEncryptionHooks(throwOnFailure: false),
+    createEncryptionRecoveryHook(
+      autoClearOnFailure: true,
+      onDecryptionFailure: (key) async {
+        print('Failed: $key');
+        return true; // clear it
+      },
+    ),
+  ],
+);
+```
+
+### Design Rationale
+- Separation of concerns: core encryption vs recovery logic
+- Flexible error handling: throw immediately vs handle gracefully
+- Progressive enhancement: recovery hooks are optional
+- Clear entry points for key rotation scenarios

@@ -5,6 +5,18 @@ All major features complete. Ready for package polish and publication.
 
 ## Recent Implementations
 
+### Encryption Recovery System (Nov 18, 2025)
+Added `lib/hooks/encryption_recovery.dart` with comprehensive key rotation and recovery features:
+- **`createEncryptionRecoveryHook()`**: Detects and handles decryption failures with optional auto-clear and error throwing
+- **`rotateEncryptionKey()`**: Changes encryption key and clears incompatible data
+- **`clearEncryptedEntries()`**: Removes only encrypted entries from cache
+- **`validateEncryptionKey()`**: Tests if current key can decrypt data
+- **`createEncryptionKeyValidationHook()`**: Validates key on first access
+
+Updated `lib/hooks/encryption.dart`:
+- Added optional `throwOnFailure` parameter to control error handling behavior (default: `true`)
+- Passed through to `createEncryptionHooks()` and `createEncryptionDecryptHook()`
+
 ### Macro Get Feature (Nov 8, 2025)
 Pattern-based auto-fetch integrated into `PVCache.get()` core method. Checks patterns after hook pipeline if returnValue is null, fetches and caches data automatically. Works with all hooks (TTL, LRU, encryption). 19 tests passing.
 
@@ -12,15 +24,22 @@ Full and selective field encryption with AES-256-CTR. Shared utilities in `lib/u
 
 ## Core Features
 
-**Hooks**: TTL (8 tests), LRU (6 tests), Encryption (10 tests), Selective Encryption (11 tests)
+**Hooks**: 
+- TTL (8 tests)
+- LRU (6 tests) 
+- Encryption (10 tests) with optional `throwOnFailure`
+- Selective Encryption (11 tests)
+- Encryption Recovery (new - no tests yet)
+
 **Macro Get**: Pattern-based auto-fetch (19 tests)
 **Examples**: Full demonstration in `example/` directory
 **Tests**: 136 passing total
 
 ## Next Steps
 
-1. Package polish: Update main README, export hooks in lib/pvcache.dart
-2. Publish to pub.dev
+1. Write tests for encryption recovery hooks
+2. Package polish: Update main README, export hooks in lib/pvcache.dart
+3. Publish to pub.dev
 
 ## Key Architecture Decisions
 
@@ -38,3 +57,10 @@ Separate sembast databases for persistent and in-memory storage. No redundant ma
 
 ### Metadata Mutability
 Metadata loaded before hooks run. Creates mutable copy for hooks to modify.
+
+### Encryption Error Handling
+Two levels of control:
+1. **`encryption.dart`**: `throwOnFailure` on decrypt hook (default `true`) - controls whether decryption failures throw exceptions
+2. **`encryption_recovery.dart`**: Recovery hook with `throwOnFailure`, `autoClearOnFailure`, and callback for handling corrupted data
+
+Typical pattern: Set encryption `throwOnFailure: false` and add recovery hook to gracefully handle key changes.

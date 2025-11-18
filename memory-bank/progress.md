@@ -4,7 +4,12 @@
 
 **Core**: Hook architecture, dual database, CRUD operations, 136 tests passing
 
-**Hooks**: TTL (8), LRU (6), Encryption (10), Selective Encryption (11)
+**Hooks**: 
+- TTL (8 tests)
+- LRU (6 tests)
+- Encryption (10 tests) - now with optional error throwing
+- Selective Encryption (11 tests)
+- Encryption Recovery (NEW - 0 tests)
 
 **Macro Get**: Pattern-based auto-fetch (19 tests)
 
@@ -14,11 +19,17 @@
 
 ## Remaining
 
-**Critical**: Reserved key validation, clear() tests, iter() implementation
+**Critical**: 
+- Tests for encryption recovery hooks
+- Reserved key validation
+- clear() tests
+- iter() implementation
 
 **Polish**: Update README, export hooks, publish to pub.dev
 
 ## Recent
+
+**Nov 18**: Encryption recovery system with key rotation, validation, and auto-clear capabilities
 
 **Nov 8**: Macro get integrated into core (not hook-based due to BreakHook limitation)
 
@@ -26,4 +37,4 @@
 
 ## Status
 
-All core features complete. Ready for polish. **136 tests passing** ✅
+All core features complete. Encryption recovery added. Need tests for recovery hooks. **136 tests passing** ✅
