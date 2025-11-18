@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:pvcache/core/cache.dart';
 import 'package:pvcache/core/enums.dart';
 import 'package:pvcache/core/bridge.dart';
+import 'package:pvcache/utils/encrypt.dart';
 import 'package:sembast/sembast.dart';
 
 /// Encryption Recovery Hook System
@@ -39,6 +41,9 @@ typedef DecryptionFailureCallback = Future<bool> Function(String key);
 /// Creates a hook that handles decryption failures.
 ///
 /// This hook should run AFTER the encryption decrypt hook to catch failures.
+/// IMPORTANT: When using this hook, you must set `throwOnFailure: false` in
+/// the encryption decrypt hook, otherwise exceptions will be thrown before
+/// this hook can handle them.
 PVCacheHook createEncryptionRecoveryHook({
   DecryptionFailureCallback? onDecryptionFailure,
   bool autoClearOnFailure = false,
@@ -83,7 +88,10 @@ PVCacheHook createEncryptionRecoveryHook({
 /// Creates a hook that validates encryption key on first access.
 ///
 /// Attempts to decrypt a test entry to verify key is valid.
-/// If test fails, clears all encrypted entries.
+/// If test fails, calls onKeyInvalid callback.
+///
+/// NOTE: This hook accesses storage directly to avoid infinite recursion.
+/// The test entry must be created separately before using this hook.
 PVCacheHook createEncryptionKeyValidationHook({
   required String testKey,
   String testValue = '_pvcache_key_test',
@@ -103,26 +111,71 @@ PVCacheHook createEncryptionKeyValidationHook({
       // Only validate once per cache instance
       if (validated) return;
 
-      // Try to read and decrypt test entry
-      final testEntry = await ctx.cache.get(testKey);
-
-      if (testEntry == testValue) {
-        // Key is valid
+      // Skip validation for the test key itself to avoid recursion
+      if (ctx.resolvedKey == testKey) {
         validated = true;
         return;
       }
 
-      // Key is invalid or test entry doesn't exist
-      // Create test entry for future validation
-      if (testEntry == null) {
-        await ctx.cache.put(testKey, testValue, metadata: {});
+      // Access storage directly to avoid recursion
+      final bridge = PVBridge();
+      final entryDb = await bridge.getDatabaseForType(
+        ctx.cache.entryStorageType,
+        heavy: ctx.cache.heavy,
+        env: ctx.cache.env,
+      );
+      final entryStore = bridge.getStore(
+        ctx.cache.env,
+        ctx.cache.entryStorageType,
+      );
+
+      // Read test entry directly from storage
+      final encryptedTestValue = await entryStore.record(testKey).get(entryDb);
+
+      if (encryptedTestValue == null) {
+        // Test entry doesn't exist, this is first run - mark as validated
+        // The test entry will be created by normal cache operations later
         validated = true;
         return;
       }
 
-      // Test entry exists but value is wrong = key changed
-      if (onKeyInvalid != null) {
-        await onKeyInvalid();
+      // Read metadata to check if it's encrypted
+      final metaDb = await bridge.getDatabaseForType(
+        ctx.cache.metadataStorageType,
+        heavy: ctx.cache.heavy,
+        env: ctx.cache.env,
+      );
+      final metaStoreName = ctx.cache.metadataNameFunction!(ctx.cache.env);
+      final metaStore = bridge.getStore(
+        metaStoreName,
+        ctx.cache.metadataStorageType,
+      );
+      final metadata = await metaStore.record(testKey).get(metaDb);
+
+      // If test entry exists and is encrypted, try to decrypt it
+      if (metadata?['_encrypted'] == true) {
+        try {
+          final key = encryptionKey ?? await getOrCreateEncryptionKey(keyName);
+          final cipher = AESCipher(key);
+          final decrypted = cipher.decryptString(encryptedTestValue as String);
+          final value = jsonDecode(decrypted);
+
+          if (value == testValue) {
+            // Key is valid
+            validated = true;
+            return;
+          }
+
+          // Value doesn't match - key changed
+          if (onKeyInvalid != null) {
+            await onKeyInvalid();
+          }
+        } catch (e) {
+          // Decryption failed - key changed
+          if (onKeyInvalid != null) {
+            await onKeyInvalid();
+          }
+        }
       }
 
       validated = true;
@@ -142,12 +195,15 @@ Future<void> rotateEncryptionKey({
   // Clear all cache data (encrypted data becomes unreadable)
   await cache.clear();
 
-  // Delete old key from secure storage
-  await PVBridge.secureStorage.delete(key: keyName);
+  // Skip secure storage operations in test mode
+  if (!PVBridge.testMode) {
+    // Delete old key from secure storage
+    await PVBridge.secureStorage.delete(key: keyName);
 
-  // Store new key if provided, otherwise will be auto-generated on next use
-  if (newKey != null) {
-    await PVBridge.secureStorage.write(key: keyName, value: newKey);
+    // Store new key if provided, otherwise will be auto-generated on next use
+    if (newKey != null) {
+      await PVBridge.secureStorage.write(key: keyName, value: newKey);
+    }
   }
 }
 
@@ -181,20 +237,27 @@ Future<void> clearEncryptedEntries(PVCache cache) async {
 /// Validates that encryption key can decrypt existing data.
 ///
 /// Returns true if key is valid, false if key mismatch detected.
+/// Note: This function requires the cache to have throwOnFailure: false
+/// in its encryption hooks to properly detect key mismatches.
 Future<bool> validateEncryptionKey({
   required PVCache cache,
   required String testKey,
   String testValue = '_pvcache_key_test',
 }) async {
-  // Try to read test entry
-  final result = await cache.get(testKey);
+  try {
+    // Try to read test entry
+    final result = await cache.get(testKey);
 
-  // If test entry doesn't exist, create it
-  if (result == null) {
-    await cache.put(testKey, testValue, metadata: {});
-    return true;
+    // If test entry doesn't exist, create it
+    if (result == null) {
+      await cache.put(testKey, testValue, metadata: {});
+      return true;
+    }
+
+    // Check if value matches
+    return result == testValue;
+  } catch (e) {
+    // Decryption failed - key is invalid
+    return false;
   }
-
-  // Check if value matches
-  return result == testValue;
 }
