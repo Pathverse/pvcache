@@ -1,3 +1,6 @@
+## 0.3.5
+- add encryption recovery hooks
+
 ## 0.3.4
 - reorganize tests into `test/core/` and `test/hooks/` directories for better maintainability
 - split monolithic test files into individual component test files
