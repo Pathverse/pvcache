@@ -1,260 +1,298 @@
-# System Patterns: PVCache
+# System Patterns: PVCache v2
 
 ## Architecture Overview
 
+See detailed documentation in `memory-bank/arch/01-architecture-overview.md`.
+
+### High-Level Flow
+
 ```
-┌─────────────────────────────────────────────────────┐
-│                    PVCache                          │
-│  - Configuration (env, storage types, etc.)         │
-│  - Hook management (_orderedPutHooks, etc.)         │
-│  - Public API (put, get, delete, clear, exists)     │
-└──────────────────┬──────────────────────────────────┘
-                   │ creates
-                   ▼
-┌─────────────────────────────────────────────────────┐
-│                     PVCtx                            │
-│  - Action type (put, get, delete, etc.)             │
-│  - Initial data (key, value, metadata)              │
-│  - Resolved runtime data                            │
-│  - Shared state (runtimeData map)                   │
-└──────────────────┬──────────────────────────────────┘
-                   │ queues through
-                   ▼
-┌─────────────────────────────────────────────────────┐
-│              PVCacheHook (List)                      │
-│  - Event flow stage                                 │
-│  - Action type filters                              │
-│  - Before/after ordering                            │
-│  - Hook function (processes ctx)                    │
-└──────────────────┬──────────────────────────────────┘
-                   │ accesses
-                   ▼
-┌─────────────────────────────────────────────────────┐
-│                   PVBridge                           │
-│  - Singleton database manager                       │
-│  - Platform detection (web vs native)               │
-│  - Sembast database initialization                  │
-│  - FlutterSecureStorage instance                    │
-└─────────────────────────────────────────────────────┘
+User Request (cache.get('key'))
+    ↓
+PVCache (public API)
+    ↓
+Creates PVRuntimeCtx (state container)
+    ↓
+Executes Compiled Plan (pre-built at init)
+    ↓
+Stages Execute in Sequence:
+  ├─ Stage 1: metadata_get
+  │   ├─ Pre-hooks: []
+  │   ├─ Stage hook: Read DB → ctx.metadata
+  │   └─ Post-hooks: []
+  │
+  ├─ Stage 2: metadata_parse (checkpoint)
+  │   ├─ Pre-hooks: []
+  │   ├─ Stage hook: No-op
+  │   └─ Post-hooks: [TTL check, LRU update]
+  │
+  ├─ Stage 3: value_get
+  │   ├─ Pre-hooks: []
+  │   ├─ Stage hook: Read DB → ctx.runtime['value']
+  │   └─ Post-hooks: [Decryption]
+  │
+  └─ Stage 4: value_parse (checkpoint)
+      ├─ Pre-hooks: []
+      ├─ Stage hook: No-op
+      └─ Post-hooks: [Transformation]
+    ↓
+Resolve Return Value (ctx.whatToReturn)
+    ↓
+Return to User
 ```
 
-## Key Technical Decisions
+## Key Design Patterns
 
-### 1. Hook-Based Plugin Architecture
-**Decision**: Use a hook system with ordered execution rather than inheritance or direct plugin interfaces.
+### 1. Stage vs Action Hooks Pattern
 
-**Rationale**: 
-- Maximum flexibility for plugin composition
-- Clear execution order through event flows
-- Plugins can focus on specific stages
-- Easy to add/remove/reorder behaviors
+**Stage Hooks** (Framework-Provided):
+- Handle database I/O
+- Consistent, tested implementations
+- Transaction-aware
+- Examples: `metadata_get`, `value_put`
 
-**Implementation**:
-- Hooks define which `EventFlow` stage they operate in
-- Hooks specify priority (int, default 0) for ordering within same EventFlow
-- Multiple hooks can process same stage
-- Context object passed through entire pipeline
+**Action Hooks** (User-Provided):
+- Business logic and transformations
+- No direct DB access
+- Modify context data only
+- Examples: TTL check, encryption
 
-### 2. Separate Entry and Metadata Storage
-**Decision**: Store cache entries and metadata separately with independent storage type configuration.
+### 2. Empty Checkpoint Pattern
 
-**Rationale**:
-- Metadata may require different storage (e.g., secure for sensitive tracking)
-- Allows metadata-only operations without loading entries
-- Supports `noMetadataStoreIfEmpty` optimization
-- Clear separation of concerns
+Some stages do no work - they're extension points:
+```dart
+PVCStageHook(
+  name: 'metadata_parse',
+  hookFunction: (ctx) async {
+    // Empty - just a checkpoint for action hooks
+  },
+)
+```
 
-### 3. Context Object Pattern
-**Decision**: Use a mutable `PVCtx` object that travels through hooks.
+Action hooks attach here:
+```dart
+PVCActionHook(
+  hookOn: 'metadata_parse',
+  isPostHook: true,
+  hookFunction: (ctx) async {
+    // TTL check logic
+  },
+)
+```
 
-**Rationale**:
-- Shared state between hooks
-- Allows hooks to modify data for subsequent hooks
-- Tracks both initial and resolved values
-- Provides `runtimeData` for temporary hook communication
+### 3. Context as State Container Pattern
 
-### 4. Singleton Bridge Pattern
-**Decision**: `PVBridge` singleton manages database connections.
+All data flows through context:
+```dart
+ctx.runtime['key']      // Entry key
+ctx.runtime['value']    // Entry value
+ctx.metadata['_ttl']    // System metadata
+ctx.temp['stats']       // Temporary data
+ctx.nextStep            // Flow control
+ctx.whatToReturn        // Return spec
+```
 
-**Rationale**:
-- Single database connection shared across cache instances
-- Platform-specific initialization (web vs native)
-- Clean separation of storage concerns
-- Easy to mock for testing
+### 4. Produces/Consumes Dependency Pattern
 
-### 5. In-Memory Cache Layer
-**Decision**: Optional in-memory cache with configurable size (`inMemoryCacheSize`).
+Hooks declare what they need and create:
+```dart
+Hook A: produces: ['metadata._counter']
+        consumes: []
 
-**Rationale**:
-- Fast access for hot data
-- Reduces database calls
-- Size limit prevents memory issues
-- Can be disabled (size = 0) if not needed
+Hook B: produces: ['temp.validated']
+        consumes: ['metadata._counter']
+        
+→ Hook A must run before Hook B
+```
+
+Compiler builds dependency graph and orders hooks automatically.
+
+### 5. Transaction Wrapping Pattern
+
+Multiple stages share same transaction:
+```dart
+await db.transaction((txn) async {
+  ctx.transaction = txn;
+  await executeStage('metadata_get', ctx);
+  await executeStage('metadata_parse', ctx);
+  await executeStage('value_get', ctx);
+  // All stages use same transaction
+});
+```
+
+### 6. Compile Once, Execute Many Pattern
+
+```
+Cache Initialization:
+  ├─ Parse sequences
+  ├─ Analyze dependencies
+  ├─ Order hooks (topological sort)
+  ├─ Build execution plan
+  └─ Cache plan in memory
+  
+Cache Operation:
+  ├─ Get pre-compiled plan
+  ├─ Create context
+  ├─ Execute plan
+  └─ Return result
+```
+
+### 7. Skip Optimization Pattern
+
+If a hook produces data nobody consumes, skip it:
+```dart
+Hook X: produces: ['temp.log']
+        skippable: true
+
+// At runtime:
+if (hook.skippable && !isDataNeeded(hook.produces)) {
+  continue;  // Skip hook
+}
+```
 
 ## Component Relationships
 
-### PVCache
-- Main entry point
-- Holds configuration
-- Manages hooks
-- Orchestrates operations through `PVCtx`
+### PVFactory → PVConfig → PVCache
 
-### PVCtx (Context)
-- Created per operation
-- Carries operation state
-- Modified by hooks
-- Returns final result
-
-### PVCacheHook
-- Defines intervention point (`EventFlow`)
-- Filters by `ActionType`
-- Orders by priority (int, default 0, lower runs first)
-- Executes function with context
-
-### PVBridge
-- Singleton storage manager
-- Provides database access
-- Handles platform differences
-- Manages secure storage
-
-## Critical Implementation Paths
-
-### Macro Get (Pattern-Based Auto-Fetch)
-**Location**: `PVCache.get()` method (post-hook-pipeline)
-
-**Flow**:
-1. Execute full hook pipeline
-2. Check if returnValue is null
-3. If null, iterate through macroGetHandlers
-4. For each pattern, check if key matches using `_matchesPattern()`
-5. On match, call fetch function with key
-6. If fetch succeeds (not null), cache data with merged metadata
-7. Return fetched data
-
-**Pattern Matching**:
-- String patterns: exact match OR prefix match (`key == pattern || key.startsWith(pattern)`)
-- RegExp patterns: `pattern.hasMatch(key)`
-- First matching handler wins
-
-**Integration Points**:
-- Works with TTL: auto-refetches after expiration
-- Works with LRU: auto-refetches after eviction
-- Works with encryption: fetched data can be encrypted
-- Works with any hook: runs after ALL hooks complete
-
-**Design Rationale**:
-- Initially attempted as hook but BreakHook prevented execution
-- Core integration ensures it runs regardless of hook behavior
-- Scales to all future hooks without special cases
-
-### Cache Put Flow
-1. Create `PVCtx` with key, value, metadata
-2. Queue through `_orderedPutHooks`
-3. Hooks process in order:
-   - preProcess
-   - metaRead (read existing metadata)
-   - metaUpdatePriorEntry (e.g., update write time)
-   - storageUpdate (write to storage)
-   - metaUpdatePostEntry (e.g., update size tracking)
-   - postProcess
-4. Return from operation
-
-### Cache Get Flow
-1. Create `PVCtx` with key
-2. Queue through `_orderedGetHooks`
-3. Hooks process:
-   - preProcess
-   - metaRead (check TTL, access patterns)
-   - storageRead (retrieve from storage/memory)
-   - metaUpdatePostEntry (update access time for LRU)
-   - postProcess
-4. **Macro Get Check** (post-pipeline):
-   - If returnValue is null (miss, expiration, eviction)
-   - Check if key matches any macroGetHandlers pattern
-   - If match found, fetch data via handler function
-   - Cache fetched data with macroGetDefaultMetadata
-   - Return fetched data
-5. Return `ctx.entryValue` or fetched data
-
-### Hook Ordering
-- Hooks are ordered by `EventFlow` first (enum order)
-- Within same flow, ordered by `priority` (lower numbers run first)
-- `_orderedPutHooks`, `_orderedGetHooks`, etc. are pre-sorted lists
-
-## Event Flow Stages
-
-1. **preProcess**: Setup, validation, early exits
-2. **metaRead**: Load metadata from storage
-3. **metaUpdatePriorEntry**: Modify metadata before touching entry (e.g., check TTL)
-4. **storageRead**: Load entry from storage
-5. **storageUpdate**: Write entry to storage
-6. **metaUpdatePostEntry**: Update metadata based on operation results
-7. **postProcess**: Cleanup, logging, callbacks
-
-## Storage Type Enum
-- `inMemory`: Fast, ephemeral
-- `sembast`: Persistent NoSQL
-- `secureStorage`: Encrypted storage
-
-## Action Type Enum
-Defines operation types:
-- `put`: Write entry
-- `get`: Read entry
-- `delete`: Remove entry
-- `clear`: Remove all entries
-- `exists`: Check if entry exists
-- `iter`: (Future) Iterate entries
-
-## Encryption Recovery Pattern
-
-### Problem
-Encryption keys can change or become invalid, making existing encrypted data unreadable. This causes:
-- Silent data loss (decryption returns null)
-- No distinction between cache miss and decryption failure
-- No recovery mechanism
-
-### Solution
-Two-layer approach in separate files:
-
-**`lib/hooks/encryption.dart`** (Core Encryption):
-- `throwOnFailure` parameter (default `true`) on decrypt hook
-- Controls whether decryption failures throw exceptions
-- When `false`, silently returns `null` on failure
-
-**`lib/hooks/encryption_recovery.dart`** (Recovery System):
-- **Detection Hook**: `createEncryptionRecoveryHook()` runs AFTER decrypt (priority 10)
-  - Detects failures (encrypted flag but null value)
-  - Optional callback to handle failures
-  - Optional auto-clear of corrupted entries
-  - Optional error throwing
-- **Validation Hook**: `createEncryptionKeyValidationHook()` runs BEFORE operations (priority -100)
-  - Tests key validity on first access
-  - Creates test entry for future validation
-  - Triggers callback if key changed
-- **Utility Functions**:
-  - `rotateEncryptionKey()`: Change key and clear all data
-  - `clearEncryptedEntries()`: Remove only encrypted entries
-  - `validateEncryptionKey()`: Test if key works
-
-### Usage Pattern
 ```dart
-final cache = PVCache(
-  env: 'myCache',
-  hooks: [
-    ...createEncryptionHooks(throwOnFailure: false),
-    createEncryptionRecoveryHook(
-      autoClearOnFailure: true,
-      onDecryptionFailure: (key) async {
-        print('Failed: $key');
-        return true; // clear it
-      },
-    ),
-  ],
-);
+// Factory builds config
+PVFactory factory = PVFactory.fromDefault();
+factory.sequenceConfig.get = ['metadata_get', 'value_get'];
+factory.actionHooks['metadata_parse'] = [ttlHook];
+PVConfig config = factory.generateConfig();
+
+// Config used to create cache
+PVCache cache = PVCache.create(config);
 ```
 
-### Design Rationale
-- Separation of concerns: core encryption vs recovery logic
-- Flexible error handling: throw immediately vs handle gracefully
-- Progressive enhancement: recovery hooks are optional
-- Clear entry points for key rotation scenarios
+### Registry Pattern
+
+Framework stage hooks registered centrally:
+```dart
+class PVCHookRegistry {
+  Map<String, PVCStageHook> stageHooks = {
+    'metadata_get': metadataGetHook,
+    'value_put': valuePutHook,
+    // ...
+  };
+}
+```
+
+Action hooks attached per-stage:
+```dart
+Map<String, List<PVCActionHook>> actionHooks = {
+  'metadata_parse': [ttlCheckHook, lruUpdateHook],
+  'value_parse': [decryptionHook],
+};
+```
+
+## Critical Paths
+
+### GET Operation
+
+1. **Initialize**: Create context with key
+2. **Metadata Get**: Read metadata from DB → ctx.metadata
+3. **Metadata Parse**: Run TTL check, LRU update (action hooks)
+4. **Value Get**: Read value from DB → ctx.runtime['value']
+5. **Value Parse**: Run decryption (action hook)
+6. **Return**: Resolve ctx.whatToReturn
+
+### PUT Operation
+
+1. **Initialize**: Create context with key, value
+2. **Metadata Get**: Read existing metadata
+3. **Metadata Prepare**: Run TTL set, LRU increment (action hooks)
+4. **Value Prepare**: Run encryption (action hook)
+5. **Value Put**: Write value to DB from ctx.runtime['value']
+6. **Metadata Put**: Write metadata to DB from ctx.metadata
+7. **Return**: Return void
+
+### Transaction Boundaries
+
+Entire operation wrapped in transaction:
+```
+Transaction Start
+  ├─ All stages execute
+  ├─ All hooks execute
+  └─ All DB operations
+Transaction Commit (or Rollback on error)
+```
+
+## Data Flow
+
+### Entry Data
+```
+User Input
+  ↓
+ctx.runtime['key'] = 'user:123'
+ctx.runtime['value'] = {'name': 'Alice'}
+  ↓
+Encryption Hook
+  ↓
+ctx.runtime['value'] = <encrypted>
+ctx.metadata['_encrypted'] = true
+  ↓
+Stage Hook (value_put)
+  ↓
+Database
+```
+
+### Metadata Flow
+```
+User Metadata
+ctx.metadata['ttl'] = 3600
+  ↓
+TTL Set Hook
+  ↓
+ctx.metadata['_ttl_timestamp'] = <timestamp>
+  ↓
+LRU Update Hook
+  ↓
+ctx.metadata['_lru_count'] = 42
+  ↓
+Stage Hook (metadata_put)
+  ↓
+Database
+```
+
+## Reserved Namespaces
+
+### Runtime Keys
+- `runtime['key']` - Entry key (required)
+- `runtime['value']` - Entry value (required for put/get)
+- `runtime['original_value']` - Backup before transformation
+
+### Metadata Keys
+**User-provided** (no prefix):
+- `metadata['ttl']` - User input
+- `metadata['secure']` - User input
+
+**System-reserved** (prefix with `_`):
+- `metadata['_ttl_timestamp']` - TTL hook
+- `metadata['_lru_count']` - LRU hook
+- `metadata['_encrypted']` - Encryption hook
+- `metadata['_encryption_nonces']` - Selective encryption hook
+
+### Temp Keys
+No restrictions - any key allowed for inter-hook communication.
+
+## Migration from Old System
+
+| Old Concept | New Concept |
+|-------------|-------------|
+| `PVCacheHook` | `PVCActionHook` |
+| `EventFlow` enum | Stage names (strings) |
+| `throw BreakHook()` | `ctx.nextStep = break_` |
+| `ctx.entryValue` | `ctx.runtime['value']` |
+| `ctx.runtimeMeta` | `ctx.metadata` |
+| `ctx.runtimeData` | `ctx.temp` |
+| Direct DB access | Stage hooks only |
+| No transactions | Transaction-wrapped |
+
+## References
+
+See detailed architecture documentation:
+- `arch/01-architecture-overview.md` - System design
+- `arch/02-hook-system.md` - Hook types and dependencies
+- `arch/03-context-system.md` - Context structure
+- `arch/04-compilation-execution.md` - Compilation and execution
