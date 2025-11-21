@@ -1,5 +1,6 @@
 import '../config/config.dart';
 import '../config/registry.dart';
+import 'enums.dart';
 
 class PVCtx {
   final String key;
@@ -23,16 +24,15 @@ class PVRuntimeCtx {
   final Map<String, dynamic> metadataMap = {};
   final Map<String, dynamic> tempMap = {};
 
-  PVRuntimeCtx._({
-    required this.initialCtx,
-    required this.config,
-  });
+  // flow control var
+  ReturnSpec returnSpec = ReturnSpec.runtimeKey;
+  String returnKey = 'result';
+  NextStep nextStep = NextStep.f_continue;
+
+  PVRuntimeCtx._({required this.initialCtx, required this.config});
 
   factory PVRuntimeCtx.fromConfig(PVConfig config, PVCtx initialCtx) {
-    return PVRuntimeCtx._(
-      initialCtx: initialCtx,
-      config: config,
-    );
+    return PVRuntimeCtx._(initialCtx: initialCtx, config: config);
   }
 
   Future<void> invokeStage(List<String> stages) async {
@@ -47,7 +47,15 @@ class PVRuntimeCtx {
   }
 
   dynamic getResult() {
-    return runtimeMap['result'];
+    switch (returnSpec) {
+      case ReturnSpec.none:
+        return null;
+      case ReturnSpec.runtimeKey:
+        return runtimeMap[returnKey];
+      case ReturnSpec.tempKey:
+        return tempMap[returnKey];
+      case ReturnSpec.metadataKey:
+        return metadataMap[returnKey];
+    }
   }
-  
 }
