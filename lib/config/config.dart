@@ -5,6 +5,7 @@ import 'sequence_config.dart';
 class PVConfig {
   static Map<String, PVConfig> _instances = {};
   static PVConfig? getInstance(String env) => _instances[env];
+  static PVConfig ensureInstance(String env) => _instances[env]!;
 
   final String env;
 

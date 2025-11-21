@@ -1,5 +1,4 @@
 import '../config/config.dart';
-import '../config/hook.dart';
 import '../config/registry.dart';
 
 class PVCtx {
