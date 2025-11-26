@@ -111,7 +111,7 @@ class PVCache {
   /// Clear all values from the cache
   Future<void> clear(PVCtx ctx) async {
     final rctx = PVRuntimeCtx(config, ctx);
-    await _getRecord(rctx);
+    await rctx.emit("parseMetadata");
     await rctx.emit(
       "clear",
       func: (ctx) async {
@@ -140,7 +140,7 @@ class PVCache {
   /// Iterate over all keys in the cache
   Future<Iterable<String>> iterateKey(PVCtx ctx) async {
     final rctx = PVRuntimeCtx(config, ctx);
-    await _getRecord(rctx);
+    await rctx.emit("parseMetadata");
     await rctx.emit(
       "iterateKey",
       func: (ctx) async {
@@ -149,7 +149,15 @@ class PVCache {
           "keys",
           defaultValue: <String>[],
         );
-        ctx.normalReturn(keys);
+        // Check each key through get() to trigger TTL and other hooks
+        final validKeys = <String>[];
+        for (final key in keys) {
+          final value = await get(PVCtx(key: key));
+          if (value != null) {
+            validKeys.add(key);
+          }
+        }
+        ctx.normalReturn(validKeys);
       },
       handlesBreak: true,
       setOutput: false,
@@ -160,11 +168,10 @@ class PVCache {
   /// Iterate over all values in the cache
   Future<Iterable<dynamic>> iterateValue(PVCtx ctx) async {
     final rctx = PVRuntimeCtx(config, ctx);
-    await _getRecord(rctx);
+    await rctx.emit("parseMetadata");
     await rctx.emit(
       "iterateValue",
       func: (ctx) async {
-        final storeRef = await ctx.getStoreRef();
         final keys = await Ref.getGlobalMetaValue(
           config,
           "keys",
@@ -172,8 +179,11 @@ class PVCache {
         );
         final values = <dynamic>[];
         for (final key in keys) {
-          final value = await storeRef.getValue(key);
-          values.add(value);
+          // Call get() to trigger TTL and other hooks
+          final value = await get(PVCtx(key: key));
+          if (value != null) {
+            values.add(value);
+          }
         }
         ctx.normalReturn(values);
       },
@@ -186,11 +196,10 @@ class PVCache {
   /// Iterate over all entries (key-value pairs) in the cache
   Future<Iterable<MapEntry<String, dynamic>>> iterateEntry(PVCtx ctx) async {
     final rctx = PVRuntimeCtx(config, ctx);
-    await _getRecord(rctx);
+    await rctx.emit("parseMetadata");
     await rctx.emit(
       "iterateEntry",
       func: (ctx) async {
-        final storeRef = await ctx.getStoreRef();
         final keys = await Ref.getGlobalMetaValue(
           config,
           "keys",
@@ -198,8 +207,11 @@ class PVCache {
         );
         final entries = <MapEntry<String, dynamic>>[];
         for (final key in keys) {
-          final value = await storeRef.getValue(key);
-          entries.add(MapEntry(key, value));
+          // Call get() to trigger TTL and other hooks
+          final value = await get(PVCtx(key: key));
+          if (value != null) {
+            entries.add(MapEntry(key, value));
+          }
         }
         ctx.normalReturn(entries);
       },

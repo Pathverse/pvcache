@@ -1,121 +1,381 @@
 import 'package:flutter/material.dart';
+import 'package:pvcache/pvcache.dart';
+import 'package:pvcache/helper/error_resolve.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Suppress IndexedDB interop errors from Sembast on web
+  suppressSembastWebErrors();
+
+  // Initialize database
+  await Db.initialize();
+
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'PVCache Web Demo',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const CacheDemoPage(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class CacheDemoPage extends StatefulWidget {
+  const CacheDemoPage({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<CacheDemoPage> createState() => _CacheDemoPageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _CacheDemoPageState extends State<CacheDemoPage> {
+  late PVCache ttlCache;
+  late PVCache lruCache;
+  late PVCache combinedCache;
 
-  void _incrementCounter() {
+  final List<String> _logs = [];
+  String? _lastResult;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeCaches();
+  }
+
+  void _initializeCaches() {
+    // TTL Cache: 5 second expiration
+    final ttlConfig = PVConfig(
+      'ttl_demo',
+      storageType: StorageType.separateFilePreferred,
+      plugins: [TTLPlugin(defaultTTLMillis: 5000)],
+    ).finalize();
+    ttlCache = PVCache.create(config: ttlConfig);
+
+    // LRU Cache: Max 5 items
+    final lruConfig = PVConfig(
+      'lru_demo',
+      storageType: StorageType.separateFilePreferred,
+      plugins: [LRUPlugin(maxSize: 5)],
+    ).finalize();
+    lruCache = PVCache.create(config: lruConfig);
+
+    // Combined LRU + TTL: Max 3 items, 10 second TTL
+    final combinedConfig = PVConfig(
+      'combined_demo',
+      storageType: StorageType.separateFilePreferred,
+      plugins: [LRUTTLPlugin(maxSize: 3, defaultTTLMillis: 10000)],
+    ).finalize();
+    combinedCache = PVCache.create(config: combinedConfig);
+
+    _log('✓ Caches initialized (IndexedDB storage)');
+  }
+
+  void _log(String message) {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _logs.add('${DateTime.now().toString().substring(11, 19)}: $message');
+      if (_logs.length > 20) _logs.removeAt(0);
     });
+  }
+
+  // TTL Cache Operations
+  Future<void> _ttlPut() async {
+    await ttlCache.put(
+      PVCtx(
+        key: 'user_${DateTime.now().millisecond}',
+        value: 'User Data ${DateTime.now().second}',
+      ),
+    );
+    _log('TTL: Put item (expires in 5s)');
+  }
+
+  Future<void> _ttlGet() async {
+    final keys = await ttlCache.iterateKey(PVCtx());
+    if (keys.isEmpty) {
+      _log('TTL: No items in cache');
+      setState(() => _lastResult = 'Empty cache');
+      return;
+    }
+
+    final key = keys.first;
+    final value = await ttlCache.get(PVCtx(key: key));
+    _log('TTL: Get "$key" = ${value ?? "EXPIRED"}');
+    setState(() => _lastResult = value?.toString() ?? 'EXPIRED');
+  }
+
+  Future<void> _ttlContains() async {
+    final keys = await ttlCache.iterateKey(PVCtx());
+    if (keys.isEmpty) {
+      _log('TTL: No keys to check');
+      return;
+    }
+
+    final key = keys.first;
+    final exists = await ttlCache.containsKey(PVCtx(key: key));
+    _log('TTL: containsKey("$key") = $exists');
+  }
+
+  Future<void> _ttlDelete() async {
+    final keys = await ttlCache.iterateKey(PVCtx());
+    if (keys.isEmpty) {
+      _log('TTL: No items to delete');
+      return;
+    }
+
+    final key = keys.first;
+    await ttlCache.delete(PVCtx(key: key));
+    _log('TTL: Deleted "$key"');
+  }
+
+  Future<void> _ttlIterate() async {
+    final entries = await ttlCache.iterateEntry(PVCtx());
+    _log('TTL: Iterate - ${entries.length} items');
+    setState(
+      () => _lastResult = entries.map((e) => '${e.key}: ${e.value}').join(', '),
+    );
+  }
+
+  Future<void> _ttlClear() async {
+    await ttlCache.clear(PVCtx());
+    _log('TTL: Cleared all items');
+  }
+
+  // LRU Cache Operations
+  Future<void> _lruPut() async {
+    final key = 'item_${DateTime.now().millisecond}';
+    await lruCache.put(PVCtx(key: key, value: 'Data ${DateTime.now().second}'));
+    _log('LRU: Put "$key" (max 5 items)');
+  }
+
+  Future<void> _lruGet() async {
+    final keys = await lruCache.iterateKey(PVCtx());
+    if (keys.isEmpty) {
+      _log('LRU: No items in cache');
+      setState(() => _lastResult = 'Empty cache');
+      return;
+    }
+
+    final key = keys.first;
+    final value = await lruCache.get(PVCtx(key: key));
+    _log('LRU: Get "$key" = $value (moved to MRU)');
+    setState(() => _lastResult = value?.toString() ?? 'null');
+  }
+
+  Future<void> _lruIterate() async {
+    final entries = await lruCache.iterateEntry(PVCtx());
+    _log('LRU: Iterate - ${entries.length} items');
+    setState(
+      () => _lastResult = entries.map((e) => '${e.key}: ${e.value}').join(', '),
+    );
+  }
+
+  Future<void> _lruClear() async {
+    await lruCache.clear(PVCtx());
+    _log('LRU: Cleared all items');
+  }
+
+  // Combined Cache Operations
+  Future<void> _combinedPut() async {
+    final key = 'combo_${DateTime.now().millisecond}';
+    await combinedCache.put(
+      PVCtx(
+        key: key,
+        value: 'Data ${DateTime.now().second}',
+        metadata: {'ttl': 8000}, // Custom TTL
+      ),
+    );
+    _log('Combined: Put "$key" (max 3, 8s TTL)');
+  }
+
+  Future<void> _combinedGet() async {
+    final keys = await combinedCache.iterateKey(PVCtx());
+    if (keys.isEmpty) {
+      _log('Combined: No items in cache');
+      setState(() => _lastResult = 'Empty cache');
+      return;
+    }
+
+    final key = keys.first;
+    final value = await combinedCache.get(PVCtx(key: key));
+    _log('Combined: Get "$key" = ${value ?? "EXPIRED"}');
+    setState(() => _lastResult = value?.toString() ?? 'EXPIRED');
+  }
+
+  Future<void> _combinedIterate() async {
+    final entries = await combinedCache.iterateEntry(PVCtx());
+    _log('Combined: Iterate - ${entries.length} items');
+    setState(
+      () => _lastResult = entries.map((e) => '${e.key}: ${e.value}').join(', '),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
+        title: const Text('PVCache Web Demo'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+      body: Row(
+        children: [
+          // Left panel - Controls
+          Expanded(
+            flex: 2,
+            child: Container(
+              color: Colors.grey[100],
+              padding: const EdgeInsets.all(16),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildCacheSection(
+                      'TTL Cache (5s expiration)',
+                      Colors.orange,
+                      [
+                        _buildButton('Put', _ttlPut, Icons.add),
+                        _buildButton('Get', _ttlGet, Icons.search),
+                        _buildButton(
+                          'Contains',
+                          _ttlContains,
+                          Icons.check_circle,
+                        ),
+                        _buildButton('Delete', _ttlDelete, Icons.delete),
+                        _buildButton('Iterate', _ttlIterate, Icons.list),
+                        _buildButton('Clear', _ttlClear, Icons.clear_all),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    _buildCacheSection('LRU Cache (max 5 items)', Colors.blue, [
+                      _buildButton('Put', _lruPut, Icons.add),
+                      _buildButton('Get', _lruGet, Icons.search),
+                      _buildButton('Iterate', _lruIterate, Icons.list),
+                      _buildButton('Clear', _lruClear, Icons.clear_all),
+                    ]),
+                    const SizedBox(height: 24),
+                    _buildCacheSection(
+                      'Combined LRU+TTL (max 3, 10s TTL)',
+                      Colors.green,
+                      [
+                        _buildButton('Put', _combinedPut, Icons.add),
+                        _buildButton('Get', _combinedGet, Icons.search),
+                        _buildButton('Iterate', _combinedIterate, Icons.list),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
+          ),
+
+          // Right panel - Logs and Results
+          Expanded(
+            flex: 3,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_lastResult != null) ...[
+                    Card(
+                      color: Colors.blue[50],
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Last Result:',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(_lastResult!),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  const Text(
+                    'Activity Log:',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: Card(
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        child: ListView.builder(
+                          reverse: true,
+                          itemCount: _logs.length,
+                          itemBuilder: (context, index) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Text(
+                                _logs[_logs.length - 1 - index],
+                                style: const TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontSize: 13,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCacheSection(String title, Color color, List<Widget> buttons) {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(width: 4, height: 24, color: color),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: buttons),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+    );
+  }
+
+  Widget _buildButton(String label, VoidCallback onPressed, IconData icon) {
+    return ElevatedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 16),
+      label: Text(label),
+      style: ElevatedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
     );
   }

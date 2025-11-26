@@ -7,6 +7,10 @@ import 'package:sembast/sembast_memory.dart';
 // ignore: unused_import
 import 'storage_other.dart' if (dart.library.html) 'storage_web.dart';
 
+export 'storage_other.dart'
+    if (dart.library.html) 'storage_web.dart'
+    show isWeb;
+
 class Ref {
   final StoreRef<String, Map<String, dynamic>> store;
   final PVImmutableConfig config;
@@ -37,7 +41,14 @@ class Ref {
     dynamic defaultValue = null,
   }) async {
     final globalMeta = await getGlobalMeta(config);
-    return globalMeta[key] ?? defaultValue;
+    final value = globalMeta[key] ?? defaultValue;
+
+    // Handle type conversion for lists from IndexedDB
+    if (value is List && defaultValue is List<String>) {
+      return List<String>.from(value);
+    }
+
+    return value;
   }
 
   static Future<void> putGlobalMeta(
@@ -98,7 +109,12 @@ class Ref {
   }
 
   Future<void> delete(String key) async {
-    await store.record(key).delete(db);
+    try {
+      await store.record(key).delete(db);
+    } catch (e) {
+      // On web, IndexedDB notification errors can occur but don't affect the operation
+      if (!isWeb) rethrow;
+    }
     final keys = await Ref.getGlobalMetaValue(
       config,
       "keys",
@@ -106,16 +122,46 @@ class Ref {
     );
     keys.remove(key);
     await Ref.updateGlobalMeta(config, {"keys": keys});
-    await db.compact();
+    if (!isWeb) {
+      await db.compact();
+    }
   }
 
   Future<void> clear() async {
-    final keys = await Ref.getGlobalMetaValue(config, "keys", defaultValue: []);
-    for (final key in keys) {
-      await store.record(key).delete(db);
+    if (isWeb) {
+      // On web: use manual deletion to avoid IndexedDB cursor issues
+      final keys = await Ref.getGlobalMetaValue(
+        config,
+        "keys",
+        defaultValue: <String>[],
+      );
+      for (final key in keys) {
+        try {
+          await store.record(key).delete(db);
+        } catch (e) {
+          // Ignore IndexedDB notification errors on web
+        }
+      }
+      await Ref.updateGlobalMeta(config, {"keys": []});
+    } else {
+      // On native platforms: try standard Sembast delete, fallback to manual
+      try {
+        await store.delete(db);
+        await Ref.updateGlobalMeta(config, {"keys": []});
+        await db.compact();
+      } on TypeError catch (_) {
+        final keys = await Ref.getGlobalMetaValue(
+          config,
+          "keys",
+          defaultValue: <String>[],
+        );
+        for (final key in keys) {
+          await store.record(key).delete(db);
+        }
+        await Ref.updateGlobalMeta(config, {"keys": []});
+        await db.compact();
+      }
     }
-    await Ref.updateGlobalMeta(config, {"keys": []});
-    await db.compact();
   }
 
   Future<bool> containsKey(String key) async {
