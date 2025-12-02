@@ -4,7 +4,7 @@
 /// - Re-exports of HiveHook core (HHive, HHConfig, HHiveCore, etc.)
 /// - Encryption support via createEncryptedHook()
 /// - PVCache helper (registerConfig, getCache, setDefaultPlugins, setDefaultTHooks)
-library pvcache;
+library;
 
 // Re-export HiveHook core
 export 'package:hivehook/hivehook.dart';
