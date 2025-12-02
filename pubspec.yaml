@@ -1,5 +1,5 @@
 name: pvcache
-description: "A new Flutter package project."
+description: "A wrapper around HiveHook for Pathverse projects, providing secure and efficient caching solutions."
 version: 1.0.0-beta.1
 homepage: https://github.com/Pathverse/pvcache
 
