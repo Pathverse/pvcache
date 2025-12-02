@@ -8,21 +8,23 @@
 │                                         │
 │  ┌──────────────────────────────────┐  │
 │  │  Re-exports (from HiveHook):     │  │
-│  │  - HHive, HHConfig               │  │
-│  │  - createTTLPlugin               │  │
-│  │  - createLRUPlugin               │  │
+│  │  - HHive, HHConfig, HHiveCore    │  │
+│  │  - HHPlugin system               │  │
 │  └──────────────────────────────────┘  │
 │                                         │
 │  ┌──────────────────────────────────┐  │
 │  │  New Addition:                   │  │
 │  │  - createEncryptedHook()         │  │
 │  │  - EncryptionKeyManager          │  │
+│  │  - EncryptionHookController      │  │
+│  │  - KeyRotationStrategy enum      │  │
 │  └──────────────────────────────────┘  │
 │                                         │
 │  ┌──────────────────────────────────┐  │
-│  │  Optional Convenience:           │  │
-│  │  - PVCache (delegates to HHive)  │  │
-│  │  - PVConfig (builds HHConfig)    │  │
+│  │  Helper Functions:               │  │
+│  │  - PVCache.registerConfig()      │  │
+│  │  - PVCache.getCache()            │  │
+│  │  - PVCache.setDefaultPlugins()   │  │
 │  └──────────────────────────────────┘  │
 └─────────────────────────────────────────┘
                     │
