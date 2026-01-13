@@ -1,2 +1,0 @@
-# pvcache
-pathverse caching solution
