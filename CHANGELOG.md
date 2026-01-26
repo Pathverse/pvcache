@@ -1,3 +1,6 @@
+## 1.0.1
+- support legacy pointycastle 
+
 ## 1.0.0
 - update to support wasm
 
